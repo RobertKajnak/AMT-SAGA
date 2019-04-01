@@ -30,9 +30,9 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import MaxPooling2D
-from tensorflow.keras.layers import ZeroPadding2D
 from tensorflow.keras.layers import Concatenate
 from tensorflow.keras.layers import Add
+from tensorflow.keras.layers import AveragePooling2D
 
 '''Reinforcement learning? Subtract at most 6 instrument, the remaining sound is the 
 reward function
@@ -147,7 +147,7 @@ class res_net:
             if sh1[2]!=sh2[2]:
                 intermediate = Conv2D(np.int(layer_to.shape[-1]),kernel_size=(1,1),padding='valid')(intermediate)
             if sh1[:2] != sh2[:2]:
-                intermediate = MaxPooling2D(_strides)(intermediate)
+                intermediate = AveragePooling2D(_strides)(intermediate)
             
             return Add()([intermediate,layer_to])
             
