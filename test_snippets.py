@@ -192,8 +192,8 @@ plt.ylabel('Log DB')
 plt.colorbar(format='%+2.0f dB')
 
 plt.subplot(5,1,3)
-mag_mel = librosa.feature.melspectrogram(S=D,n_mels = 512)
-librosa.display.specshow(mag_mel, y_axis='mel',sr=sr) 
+mag_mel = librosa.feature.melspectrogram(S=mag**2,n_mels = 512)
+librosa.display.specshow(librosa.power_to_db(mag_mel,ref=np.max), y_axis='mel',sr=sr) 
 plt.ylabel('Mel')
 plt.colorbar(format='%+2.0f dB')
 
@@ -209,6 +209,116 @@ y_back = librosa.istft(librosa.db_to_amplitude(D,ref=ref_mag)*ph)
 librosa.display.waveplot(y_back,sr=sr)
 
 soundfile.write(path+'filtered.flac', y_back, sr, format='flac', subtype='PCM_24')
+
+
+#%% Phase-based Harmonic/Percussive Separation by 
+# Estefan´ıa Cano, Mark Plumbley, Christian Dittmar,
+
+#Step 1: calculate S and phi
+F = librosa.stft(y,center=False,n_fft=buckets)
+S,ph = librosa.core.magphase(F)
+ref_mag = np.max(S)
+
+#Other calculations and constants:
+fs = sr
+N = buckets
+H = np.int(N/4)
+
+#Step 2 Dk_low, Dk_high for each freq. bin
+dk_low = np.zeros(int(N/2)+1,dtype=np.double)
+dk_high = np.zeros(int(N/2)+1,dtype=np.double)
+
+f_inc = fs/N
+f_d = f_inc/2
+f_k = f_d
+ 
+for i in range(int(N/2)+1):
+    dfk = 2*np.pi * H  /fs
+    dk_low[i] = dfk * (f_k-f_d)
+    dk_high[i] = dfk * (f_k+f_d)
+    f_k += f_inc
+    
+#Step 3&4: Peaks: Top 5 values, at least 0.5 Barks apart
+
+#3.1: Remove all Values that are below a threshold
+th = librosa.db_to_amplitude(-25)*ref_mag
+Q = np.where(S>th,S,0)
+M = np.zeros(S.shape,dtype=np.int8)
+
+
+#3.2: remove reigster outside saxophone range -- note relevant -> skipped
+#3.3: The peaks within 0.5 Bark of the highest amplitude are replaced with the highest peak
+bark = lambda f: 6 * np.arcsinh(f/600.0)
+arcbark = lambda B: np.sinh(B/6.0) * 600.0
+for i in range(Q.shape[1]):
+    for j in range(5):
+        if np.max(Q[:,i]) == 0:
+            break;
+        lmaxind = np.argmax(Q[:,i])
+        fmax = lmaxind*sr/N
+        B = bark(fmax)
+        llimf,hlimf = arcbark(B-0.5),arcbark(B+0.5)
+        llimi,hlimi = int(llimf*N/sr),int(hlimf*N/sr)
+        M[llimi:hlimi,i] = 1
+        Q[llimi:hlimi,i] = 0
+     
+#graphical check
+#plt.figure(figsize=(12, 16))
+#plt.subplot(4, 1, 1)
+#librosa.display.specshow(librosa.amplitude_to_db(S,ref=ref_mag), y_axis='log',sr=sr)
+#plt.ylabel('Original spectrogram')
+#plt.subplot(4, 1, 2)
+#librosa.display.specshow(librosa.amplitude_to_db(np.where(S>th,S,0),ref=ref_mag), y_axis='log',sr=sr)
+#plt.ylabel('S after threshold filtered')
+#plt.subplot(4, 1, 3)
+#librosa.display.specshow(librosa.amplitude_to_db(Q,ref=ref_mag), y_axis='log',sr=sr)
+#plt.ylabel('S after removing peaks')
+#plt.colorbar(format='%+2.0f dB')
+#plt.subplot(4, 1, 4)
+#librosa.display.specshow((M-1)/20, y_axis='log',sr=sr)
+#plt.ylabel('Peaks, Bark scaled')
+
+#Step 5 Masked phase spectrogram
+ph_rad = np.angle(ph)
+ph_masked = ph_rad * M
+
+
+#Step 6
+ph_unwrap = np.unwrap(ph_masked)
+derivate = lambda a: [0 if i==0 else (a[i]-a[i-1])/2 for i in range(a.shape[0])]
+Ph= np.apply_along_axis(derivate,1,ph_unwrap)/2/np.pi
+
+#Step 7
+binary_spectral_mask = lambda a: [(l<i) and (i<h) for i,l,h in zip(a,dk_low,dk_high)]
+H_bsm = np.apply_along_axis(binary_spectral_mask,0,Ph)
+P_bsm = 1-H_bsm
+
+#Step8 Spectral leakage
+
+#Step9
+S_harm = S*H_bsm
+S_perc = S*P_bsm
+
+#graphical check
+plt.figure(figsize=(12, 16))
+plt.subplot(3, 1, 1)
+librosa.display.specshow(librosa.amplitude_to_db(S,ref=ref_mag), y_axis='log',sr=sr)
+plt.ylabel('Original spectrogram')
+plt.colorbar(format='%+2.0f dB')
+plt.subplot(3, 1, 2)
+librosa.display.specshow(librosa.amplitude_to_db(S_harm,ref=ref_mag), y_axis='log',sr=sr)
+plt.ylabel('Harmonic Components')
+plt.colorbar(format='%+2.0f dB')
+plt.subplot(3, 1, 3)
+librosa.display.specshow(librosa.amplitude_to_db(S_perc,ref=ref_mag), y_axis='log',sr=sr)
+plt.ylabel('Percussive Components')
+plt.colorbar(format='%+2.0f dB')
+
+y_harm =  librosa.istft(S_harm*ph)
+y_perc =  librosa.istft(S_perc*ph)
+#soundfile.write(path+'harmonic.flac', S_harm, sr, format='flac', subtype='PCM_24')
+#soundfile.write(path+'percussive.flac', S_perc, sr, format='flac', subtype='PCM_24')
+
 #%% Test transcription
 
 def get_pitch(frame):
