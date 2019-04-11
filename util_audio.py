@@ -117,14 +117,27 @@ class audio_io:
 class sf_synthethizer:
     #'D:/Soundfonts/HD.sf2'
     def __init__(self,soundfont_filename):
-        self.sf2_file = open(soundfont_filename,'rb')
-        self.sf = Sf2File(self.sf2_file)
-        self.all_presets = {}
+        with open(soundfont_filename,'rb') as sf2_file:
+            self.sf = Sf2File(sf2_file)
+#        self.all_presets = {}
+#        for pres in self.sf.presets:
+#            if pres.name != 'EOP':
+#                if pres.preset not in self.all_presets:
+#                self.all_presets[pres.preset] =[]
+#                self.all_presets[pres.preset].append(pres)
+#            else:
+#                self.all_presets[pres.preset].append(pres)
+        self.all_presets = [[] for i in range(128)]
         for pres in self.sf.presets:
-            if pres.name != 'EOP' and pres.preset not in self.all_pres:
-                self.all_presets[pres.preset] = pres
+            if pres.name !='EOP':
+                self.all_presets[pres.preset].append(pres)
         #keys_sorted = sorted(all_pres.keys())
         
+    def get_sample():
+        return None
+    def render_notes(self,notes,start,duration):
+        #waw = np.zeros(,dtype.np.double)
+        return None
         
     def generate(self,pitch, duration, raw_audio=None, extend = False ,start=0, 
                  instrument=None,velocity=127):
@@ -146,7 +159,8 @@ class sf_synthethizer:
         
         
     def close(self):
-        self.sf2_file.close()
+        #self.sf2_file.close()
+        pass
         
     def __enter__(self):
         return self
@@ -220,15 +234,15 @@ class synthetizer:
 
         self.midiout.send_message(note_on)
         
-#        for i in range(0, int(self.RATE / self.CHUNK * self.RECORD_SECONDS)):
-#            audio_frames.append(stream.read(self.CHUNK))
+        for i in range(0, int(self.RATE / self.CHUNK * self.RECORD_SECONDS)):
+            audio_frames.append(stream.read(self.CHUNK))
 
-#        self.midiout.send_message(note_off)
-#        stream.close()
+        self.midiout.send_message(note_off)
+        stream.close()
         
         #time.sleep(duration)
         #self.midiout.send_message(note_off)
-        Timer(duration,self.midiout.send_message,[note_off]).start()
+#        Timer(duration,self.midiout.send_message,[note_off]).start()
 #        return audio_frames
     
     

@@ -18,6 +18,7 @@ import librosa
 import librosa.display
 import soundfile
 import scipy
+
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 #%% Predef functions
@@ -34,13 +35,13 @@ def add_note(sequence, instrument, program, pitch, start, end, velocity=127,  is
 
 #%% Load File
 path = 'C:/Code/Python/[Thesis]/AMT SAGA/data/'
-#filename = 'Nyan_Cat_piano.mp3'
+filename = 'Nyan_Cat_piano.mp3'
 #filename = 'Supersonic.mp3'
 #filename = 'Fuyu no Epilogue.flac'
-filename = 'Utauyo!! MIRACLE.mp3'
+#filename = 'Utauyo!! MIRACLE.mp3'
 #filename = 'Runaway.mp3'
 
-wav,sr = librosa.load(path+filename,sr=None,mono=False,duration=30,offset=20)
+wav,sr = librosa.load(path+filename,sr=None,mono=False,duration=30,offset=0)
 y = wav[0]
 
 #filename = librosa.util.example_audio_file()
@@ -173,6 +174,7 @@ def subract_pen(base,to_subtract,reflect=False,offset=0,threshold = -60):
         for j in range(to_subtract.shape[0]):
             base[j,offset+i] -= to_subtract[j,i] *\
                     -1 if reflect and base[j,offset+i]<threshold else 1
+    return base
 
 buckets = 4096
 F = librosa.stft(y,center=False,n_fft=buckets)
@@ -181,29 +183,37 @@ ref_mag = np.max(mag)
 
 D = librosa.amplitude_to_db(mag,ref=ref_mag)
 plt.figure(figsize=(12, 24))
-plt.subplot(5, 1, 1)
-librosa.display.specshow(D,y_axis='linear',sr=sr)
-plt.ylabel('Linear DB')
-plt.colorbar(format='%+2.0f dB')
+#plt.subplot(5, 1, 1)
+#librosa.display.specshow(D,y_axis='linear',sr=sr)
+#plt.ylabel('Linear DB')
+#plt.colorbar(format='%+2.0f dB')
 
-plt.subplot(5,1,2)
+plt.subplot(3,1,1)
 librosa.display.specshow(D, y_axis='log',sr=sr)
 plt.ylabel('Log DB')
 plt.colorbar(format='%+2.0f dB')
 
-plt.subplot(5,1,3)
-mag_mel = librosa.feature.melspectrogram(S=mag**2,n_mels = 512)
-librosa.display.specshow(librosa.power_to_db(mag_mel,ref=np.max), y_axis='mel',sr=sr) 
-plt.ylabel('Mel')
-plt.colorbar(format='%+2.0f dB')
+#plt.subplot(5,1,3)
+#mag_mel = librosa.feature.melspectrogram(S=mag**2,n_mels = 512)
+#librosa.display.specshow(librosa.power_to_db(mag_mel,ref=np.max), y_axis='mel',sr=sr) 
+#plt.ylabel('Mel')
+#plt.colorbar(format='%+2.0f dB')
+
+offset = 16000
+rem_wav_offset = y - np.array([0]*offset+list(y[:-offset]))
+F2 = librosa.stft(rem_wav_offset,center=False,n_fft=buckets)
+mag2,ph2 = librosa.core.magphase(F2)
+mag2 = mag-mag2
+D = librosa.amplitude_to_db(mag2,ref=ref_mag)
+
 
 #band_stop(D,12000,18000,50,n_fft=buckets)
-plt.subplot(5,1,4)
+plt.subplot(3,1,2)
 librosa.display.specshow(D, y_axis='log',sr=sr)
 plt.ylabel('Log, removed filter')
 plt.colorbar(format='%+2.0f dB')
 
-plt.subplot(5,1,5)
+plt.subplot(3,1,3)
 plt.ylabel('Waveform transformed back')
 y_back = librosa.istft(librosa.db_to_amplitude(D,ref=ref_mag)*ph)
 librosa.display.waveplot(y_back,sr=sr)
@@ -214,15 +224,16 @@ soundfile.write(path+'filtered.flac', y_back, sr, format='flac', subtype='PCM_24
 #%% Phase-based Harmonic/Percussive Separation by 
 # Estefan´ıa Cano, Mark Plumbley, Christian Dittmar,
 
+
+#Constants:
+fs = sr
+N = 4096
+H = np.int(N/4)
+
 #Step 1: calculate S and phi
-F = librosa.stft(y,center=False,n_fft=buckets)
+F = librosa.stft(y,center=False,n_fft=N)
 S,ph = librosa.core.magphase(F)
 ref_mag = np.max(S)
-
-#Other calculations and constants:
-fs = sr
-N = buckets
-H = np.int(N/4)
 
 #Step 2 Dk_low, Dk_high for each freq. bin
 dk_low = np.zeros(int(N/2)+1,dtype=np.double)
@@ -230,12 +241,12 @@ dk_high = np.zeros(int(N/2)+1,dtype=np.double)
 
 f_inc = fs/N
 f_d = f_inc/2
-f_k = f_d
  
+f_k = f_d
+dfk = 2*np.pi * H  /fs
 for i in range(int(N/2)+1):
-    dfk = 2*np.pi * H  /fs
     dk_low[i] = dfk * (f_k-f_d)
-    dk_high[i] = dfk * (f_k+f_d)
+    dk_high[i] = dfk * (f_k+f_d) 
     f_k += f_inc
     
 #Step 3&4: Peaks: Top 5 values, at least 0.5 Barks apart
@@ -279,15 +290,15 @@ for i in range(Q.shape[1]):
 #plt.ylabel('Peaks, Bark scaled')
 
 #Step 5 Masked phase spectrogram
-ph_rad = np.angle(ph)
+ph_rad = np.angle(F)
 ph_masked = ph_rad * M
 
 
 #Step 6
 ph_unwrap = np.unwrap(ph_masked)
-derivate = lambda a: [0 if i==0 else (a[i]-a[i-1])/2 for i in range(a.shape[0])]
-Ph= np.apply_along_axis(derivate,1,ph_unwrap)/2/np.pi
+derivate = lambda a: [0 if i==0 else (a[i]-a[i-1]) for i in range(a.shape[0])]
 
+Ph= np.apply_along_axis(derivate,1,ph_unwrap) /2.0/np.pi #/fs
 #Step 7
 binary_spectral_mask = lambda a: [(l<i) and (i<h) for i,l,h in zip(a,dk_low,dk_high)]
 H_bsm = np.apply_along_axis(binary_spectral_mask,0,Ph)
@@ -316,8 +327,8 @@ plt.colorbar(format='%+2.0f dB')
 
 y_harm =  librosa.istft(S_harm*ph)
 y_perc =  librosa.istft(S_perc*ph)
-#soundfile.write(path+'harmonic.flac', S_harm, sr, format='flac', subtype='PCM_24')
-#soundfile.write(path+'percussive.flac', S_perc, sr, format='flac', subtype='PCM_24')
+soundfile.write(path+'harmonic.flac', y_harm, sr, format='flac', subtype='PCM_24')
+soundfile.write(path+'percussive.flac', y_perc, sr, format='flac', subtype='PCM_24')
 
 #%% Test transcription
 
