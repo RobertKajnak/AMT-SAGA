@@ -7,71 +7,136 @@ Created on Sun Mar 24 17:05:15 2019
 
 from magenta.music import midi_io
 from magenta.protobuf import music_pb2
-import rtmidi
-import rtmidi.midiconstants as consts
-import pyaudio
-from sf2utils.sf2parse import Sf2File
 import librosa
 
 import soundfile
 import numpy as np
 import matplotlib.pyplot as plt
 
-from threading import Timer
-
-import wave
+import copy
 
 #https://www.midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2
 #http://people.csail.mit.edu/hubert/pyaudio/
 #https://github.com/SpotlightKid/python-rtmidi/blob/master/examples/advanced/midiwrapper.py
 
-
-
 class entity:
-    def __init__(self,waveform,F_H,F_window_size=None,sample_rate=44100):
+    def __init__(self,waveform,F_H,F_window_size=None,center=True,sample_rate=44100):
         self.wf = waveform
         self._F = None
         self._mag = None
+        self._ref_mag = None
         self._ph = None
         self._D = None
-        self.ref_mag = np.max(self.mag)
         
         self.sr = sample_rate
         self.H = F_H
-        self.F_ws = F_window_size
-
+        self.center = center
+        self.ws = F_window_size
+        
+        
+    def clone(self):
+        """Copies the parameters and a deepcopy of the waveform"""
+        return entity(copy.deepcopy(self.wf),self.H,self.ws,self.sr)
+    
     @property
     def F(self):
         if self._F is None:
-            self._F = librosa.stft(self.wf)
+            self._F = librosa.stft(self.wf,n_fft = self.H,
+                                   win_length=self.ws,center=self.center)
         return self._F
+    @F.setter
+    def F(self,value):
+        self._D = None
+        self._ref_mag = None
+        self._mag = None
+        self._ph = None
+        self._F = value
+        self.wf = librosa.istft(self._F)
     
     @property
     def mag(self):
         if self._mag is None:
             self._mag,self._ph = librosa.core.magphase(self.F)
         return self._mag
+    @mag.setter
+    def mag(self,val):
+        self._D = None
+        self._ref_mag = None
+        self._mag = val
+        self._F = self._mag * self._ph
+        self.wf = librosa.istft(self._F)
+        
     @property
     def ph(self):
         if self._ph is None:
             self._mag,self._ph = librosa.core.magphase(self.F)
         return self._ph
+    @ph.setter
+    def ph(self,val):
+        self._ph = val
+        self._F = self._mag*self._ph
+        self.wf = librosa.istft(self._F)
+
+    @property
+    def ref_mag(self):
+        if self._ref_mag is None:
+            self._ref_mag = np.max(self.mag)
+        return self._ref_mag
 
     @property
     def D(self):
         if self._D is None:
             self._D = librosa.amplitude_to_db(self.mag,ref=self.ref_mag)
         return self._D
+    @D.setter
+    def D(self, val):
+        self._D = val
+        #self._ref_mag = None
+        self._mag = librosa.db_to_amplitude(self._D,ref = self.ref_mag)
+        self._F = self._mag*self._ph
+        self.wf = librosa.istft(self._F)
     
-    def subtract(self,subtrahend):
-        """ self is the minuend and the subtrahend is provided. 
-            It can be either of the same class or a magnitude
+    def subtract(self,subtrahend, offset=0,attack_compensation=0,
+                     normalize = True, relu = True, overkill_factor = 1):
+        """ self is the minuend and the subtrahend is provided
+            params:
+                subtrahend: It can be either of the same class or a magnitude
+                offset: offset expressed in seconds
+                attack_compensation: when generating a midi file, the attack may be handled differently
+                    when starting from 0 time or not
+                normalize: True=> subtrahend *= np.max(minuend)/np.max(subtrahend)
+                relu: values below 0 are set to 0 on the result
+                overkill_factor: the sutrahend is multiplied by this value to increase it's effect
+                    it is adviseable to also set 'relu=True'
+                
+                
         """
-        pass
-    
-    def plot_spec(self,width=12,hegith = 5):
         
-        plt.figure(figsize=(10, 5))
+        if isinstance(subtrahend,type(self)):
+            mag_sub = copy.deepcopy(subtrahend.mag)
+            if normalize:
+                mag_sub *= self.ref_mag / subtrahend.ref_mag
+        else:
+            mag_sub = copy.deepcopy(subtrahend)
+            ref_max_sub = np.max(mag_sub)
+            if normalize:
+                mag_sub *= self.ref_mag / ref_max_sub
+                
+        mag_sub *= overkill_factor
+        
+        total_s = self.wf.shape[0]/self.sr
+        offset = np.int(np.floor( self.mag.shape[1]/total_s * offset) )- attack_compensation
+        self.mag -= np.concatenate(
+                         (np.zeros((self.mag.shape[0],offset)) ,
+                         mag_sub,
+                         np.zeros((self.mag.shape[0],self.mag.shape[1]-offset-mag_sub.shape[1]))),
+                         axis = 1)
+        if relu:
+            self.mag = np.maximum(self.mag,0,self.mag)
+    
+    def plot_spec(self,width=12,height = 5):
+        
+        plt.figure(figsize=(width, height))
 
         plt.subplot(1,1,1)
         librosa.display.specshow(self.D, y_axis='log',x_axis='time',sr=self.sr)
@@ -82,14 +147,6 @@ class entity:
         audio_to_flac(waveform = self.wf,
                       filename=filename,sr=self.sr)
         
-#    def close(self):
-#        pass
-#        
-#    def __enter__(self):
-#        return self
-#
-#    def __exit__(self, exc_type, exc_value, traceback):
-#        self.close()
 
 class note_sequence:
     #'D:/Soundfonts/HD.sf2'
@@ -142,6 +199,13 @@ class note_sequence:
         
         
 def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
+    """ Plots a list of spectrograms or entities
+    params:
+        spec_list: can either be a list of db power spectra or entities
+        sr: sampling rate
+        width: subplot width
+        height_per_plot: height for subplot
+    """
 
     N = len(spec_list)
     if N>20:
@@ -151,7 +215,10 @@ def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
 
     for i in range(N):
         plt.subplot(N,1,i+1)
-        librosa.display.specshow(spec_list[i], y_axis='log',x_axis='time',sr=sr)
+        spec = spec_list[i]
+        if isinstance(spec,entity):
+            spec = spec_list[i].D           
+        librosa.display.specshow(spec, y_axis='log',x_axis='time',sr=sr)
         plt.ylabel('Log DB')
         plt.colorbar(format='%+2.0f dB')
         

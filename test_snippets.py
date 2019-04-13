@@ -10,6 +10,7 @@ Created on Sat Mar 23 12:05:48 2019
 
 from util_audio import note_sequence as nsequence
 from util_audio import midi_from_file
+import util_audio
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -396,7 +397,7 @@ wf = mid.fluidsynth(fs=sr, sf2_path=sf_path)#[:sr*2]
 
 #Generate Fourier and subtract
 buckets = 4096
-F = librosa.stft(wf,center=False,n_fft=buckets)
+F = librosa.stft(wf,n_fft=buckets)
 mag,ph = librosa.core.magphase(F)
 ref_mag = np.max(mag)
 
@@ -416,7 +417,7 @@ mag_guess = mag_guess * ref_mag / ref_mag_guess * overkill_factor
 D_guess = librosa.amplitude_to_db(mag_guess,ref=ref_mag)
 
 total_s = wf.shape[0]/sr
-offset = np.int(np.floor( mag.shape[1]/total_s * 0.5) )- 2
+offset = np.int(np.floor( mag.shape[1]/total_s * 0.5) )
 mag_sub = mag - np.concatenate(
                  (np.zeros((mag.shape[0],offset)) ,
                  mag_guess,
@@ -453,6 +454,29 @@ ns.save(path+output_file_name)
 soundfile.write(path + 'wave_test.flac', wf, sr, format='flac', subtype='PCM_24')
 soundfile.write(path + 'wave_test_guess.flac', wf_guess, sr, format='flac', subtype='PCM_24')
 soundfile.write(path + 'wave_test_sub.flac', wf_sub, sr, format='flac', subtype='PCM_24')
+
+#%% Same thing, short version with the audio_util
+sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
+buckets = 4096
+
+ns = nsequence()
+ns.add_note(0,0,67,start=0,end=2)
+ns.add_note(0,0,71,start=0,end=2)
+ns.add_note(0,0,74,start=0,end=2)
+
+ns.add_note(0,0,48,start=0.5,end=1.5)
+
+wf = ns.render(sf_path)
+ent = util_audio.entity(wf,buckets)
+
+guess = nsequence()
+guess.add_note(0,0,48,0,1)
+ent_guess = util_audio.entity(guess.render(sf_path),buckets)
+
+ent_sub = ent.clone()
+ent_sub.subtract(ent_guess,offset=0.5,attack_compensation = 0)
+
+util_audio.plot_specs([ent_guess, ent, ent_sub])
 
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
