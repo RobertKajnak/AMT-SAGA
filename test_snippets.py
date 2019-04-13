@@ -19,6 +19,7 @@ import librosa.display
 import soundfile
 import scipy
 
+import fluidsynth
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 #%% Predef functions
@@ -377,12 +378,99 @@ for i,frame in enumerate(C_smooth[idx].transpose()):
 output_file_name = 'midi_out_test.mid'
 sequence.save(path+output_file_name)
 
+#%% Test MIDi generation-subtraction:
+# Generate a sustained G major chord for a whole note with a C, one octave lower for a half in the middle
+from magenta.music import midi_io
+sr = 44100
+sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
+
+ns = nsequence()
+ns.add_note(0,0,67,start=0,end=2)
+ns.add_note(0,0,71,start=0,end=2)
+ns.add_note(0,0,74,start=0,end=2)
+
+ns.add_note(0,0,48,start=0.5,end=1.5)
+
+mid = midi_io.note_sequence_to_pretty_midi(ns.sequence)
+wf = mid.fluidsynth(fs=sr, sf2_path=sf_path)#[:sr*2]
+
+#Generate Fourier and subtract
+buckets = 4096
+F = librosa.stft(wf,center=False,n_fft=buckets)
+mag,ph = librosa.core.magphase(F)
+ref_mag = np.max(mag)
+
+D = librosa.amplitude_to_db(mag,ref=ref_mag)
+
+
+guess = nsequence()
+guess.add_note(0,0,48,0,1)
+mid_guess = midi_io.note_sequence_to_pretty_midi(guess.sequence)
+wf_guess = mid_guess.fluidsynth(fs=sr, sf2_path=sf_path)#[:sr]
+
+F_guess = librosa.stft(wf_guess,center=False,n_fft=buckets)
+mag_guess,_ = librosa.core.magphase(F_guess)
+ref_mag_guess = np.max(mag_guess)
+overkill_factor = 1
+mag_guess = mag_guess * ref_mag / ref_mag_guess * overkill_factor
+D_guess = librosa.amplitude_to_db(mag_guess,ref=ref_mag)
+
+total_s = wf.shape[0]/sr
+offset = np.int(np.floor( mag.shape[1]/total_s * 0.5) )- 2
+mag_sub = mag - np.concatenate(
+                 (np.zeros((mag.shape[0],offset)) ,
+                 mag_guess,
+                 np.zeros((mag.shape[0],mag.shape[1]-offset-mag_guess.shape[1]))),
+                 axis = 1)
+
+mag_sub = np.maximum(mag_sub,0,mag_sub)
+D_sub = librosa.amplitude_to_db(mag_sub,ref=ref_mag)
+wf_sub = librosa.istft(mag_sub*ph)
+
+plt.figure(figsize=(12, 15))
+
+plt.subplot(3,1,2)
+librosa.display.specshow(D, y_axis='log',sr=sr)
+plt.ylabel('Log DB')
+plt.colorbar(format='%+2.0f dB')
+
+plt.subplot(3,1,1)
+librosa.display.specshow(D_guess, y_axis='log',sr=sr)
+plt.ylabel('Log DB')
+plt.colorbar(format='%+2.0f dB')
+
+plt.subplot(3,1,3)
+librosa.display.specshow(D_sub, y_axis='log',sr=sr)
+plt.ylabel('Log DB')
+plt.colorbar(format='%+2.0f dB')
+
+#Save both midi and wav
+path = './data/'
+
+output_file_name = 'midi_out_test.mid'
+ns.save(path+output_file_name)
+
+soundfile.write(path + 'wave_test.flac', wf, sr, format='flac', subtype='PCM_24')
+soundfile.write(path + 'wave_test_guess.flac', wf_guess, sr, format='flac', subtype='PCM_24')
+soundfile.write(path + 'wave_test_sub.flac', wf_sub, sr, format='flac', subtype='PCM_24')
 
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)
 #    
 #    soundfile.write('C:/Code/Python/[Thesis]/Magenta/data/audio/librosa_voice.flac', y_foreground, sr, format='flac', subtype='PCM_24')
-#    soundfile.write('C:/Code/Python/[Thesis]/Magenta/data/audio/librosa_background.flac', y_background, sr, format='flac', subtype='PCM_24')
+#    soundfile.write(path + 'wave_test.flac', y_background, sr, format='flac', subtype='PCM_24')
 #    librosa.output.write_wav(path + 'sample.wav', sf.samples[0].raw_sample_data,sf.samples[0].sample_rate)
+
+
+
+
+
+
+
+
+
+
+
+
     
