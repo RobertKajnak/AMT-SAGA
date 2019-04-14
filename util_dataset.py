@@ -3,13 +3,15 @@ import os
 
 class DataManager():
     def __init__(self, path, 
-                 types=('midi','audio'), sets=('training','validation','test'),
+                 types=['midi','audio'], sets=['training','validation','test'],
                  sort=True):
         """ Class for fetching filenames from the directories.
-            The directories should be named  as follows:
-                train, test and validation. train and test should contain 
-                a folder called midi. If next_pair function is used, they should 
-                also a folder called audio.
+            args:
+                path: parent directory
+            types and sets: inside the path directory should be as follows:
+                {sets[0]}/{types[0]}, {sets[0]/types[1]}, etc.
+            sort: Sorts the contents of the files by filename. If this is set
+                to false, undue pair title mismatch exception may be raised
         """
         self.sets = sets
         self.types = types
@@ -45,10 +47,7 @@ class DataManager():
     def __iter__(self):
         return self
 
-    def __next__(self):
-
-        """Returns the next Midi file. If there are none left, None is returned"""
-        
+    def __next__(self):        
         cset = self.data[self.set_c]
         if self.index<len(cset[self.types[0]]):
             candidates = []
