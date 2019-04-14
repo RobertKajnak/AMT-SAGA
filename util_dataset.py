@@ -36,11 +36,13 @@ class DataManager():
         self.index = 0
         
         
-    def switch_type(self, new_set):
+    def set_set(self, new_set):
         ''' new_type should be one from the ones specified in the constructor
             To check, use .types.keys()
             Also.resets counter  (index)
         '''
+        if new_set not in self.sets:
+            raise ValueError('Specified set not in sets from construction')
         self.set_c = new_set
         self.index = 0
     
