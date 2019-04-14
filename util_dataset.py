@@ -2,45 +2,67 @@ import os
 
 
 class DataManager():
-    def __init__(self, path, sort=False):
-        ''' Convert the files into data unseable in tensorflow'''
+    def __init__(self, path, 
+                 types=('midi','audio'), sets=('training','validation','test'),
+                 sort=True):
+        """ Class for fetching filenames from the directories.
+            The directories should be named  as follows:
+                train, test and validation. train and test should contain 
+                a folder called midi. If next_pair function is used, they should 
+                also a folder called audio.
+        """
+        self.sets = sets
+        self.types = types
         
-        self.audio = []
-        self.midi =[]
-        self.audio.append(sorted([name for name in os.listdir(os.path.join(path,'train/audio'))], key=lambda v: v.upper()))
-        self.midi.append(sorted([name for name in os.listdir(os.path.join(path,'train/midi'))], key=lambda v: v.upper()))
-        self.audio.append(sorted([name for name in os.listdir(os.path.join(path,'test/audio'))], key=lambda v: v.upper()))
-        self.midi.append(sorted([name for name in os.listdir(os.path.join(path,'test/midi'))], key=lambda v: v.upper()))
-        self.audio.append(sorted([name for name in os.listdir(os.path.join(path,'validation/audio'))], key=lambda v: v.upper()))
-        self.type = 0;
-        self.index = 0;
+        self.data={}
         
         if sort:
-            for au in self.audio:
-                au.sort()
-            for mid in self.midi:
-                mid.sort()
+            l_sort = lambda v: v.upper()
+        else:
+            l_sort = True
+            
+        get_filenames = lambda dn1,nd2: sorted([name for name in 
+                                os.listdir(os.path.join(path,os.path.join(dn1,nd2)))], 
+                                key=l_sort)
         
-    def switch_type(self, type):
-        ''' type:
-                0: training
-                1: test
-                2: validations
-            also resets counter  (index)
-        '''
-        self.type=type
+        for s in sets:
+            self.data[s] = {}
+            for t in types:
+                self.data[s][t] = get_filenames(s,t)
+                
+        self.set_c = sets[0]
         self.index = 0
         
-    def next_pair(self):
         
-        if (self.index<len(self.audio[self.type])):
-            audio_candidate = self.audio[self.type][self.index]
-            midi_candidate = self.midi[self.type][self.index]
-            if audio_candidate[:audio_candidate.rfind('.')].upper() == midi_candidate[:midi_candidate.rfind('.')].upper():
-                self.index += 1
-                return audio_candidate,midi_candidate
-            else:
-                raise Exception('Pair title mismatch')
+    def switch_type(self, new_set):
+        ''' new_type should be one from the ones specified in the constructor
+            To check, use .types.keys()
+            Also.resets counter  (index)
+        '''
+        self.set_c = new_set
+        self.index = 0
+    
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+
+        """Returns the next Midi file. If there are none left, None is returned"""
+        
+        cset = self.data[self.set_c]
+        if self.index<len(cset[self.types[0]]):
+            candidates = []
+            for k in cset.keys():
+                candidates.append(cset[k][self.index])
+            
+            cprev = candidates[0]
+            for cand in candidates:
+                if cand[:cand.rfind('.')].upper() != cprev[:cand.rfind('.')].upper():
+                    raise Exception('Pair title mismatch')
+                cprev = cand
+            self.index +=1
+            return candidates
         else:
-            return (None,None)
-        
+            self.index = 0
+            raise StopIteration
+    
