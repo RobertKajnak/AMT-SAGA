@@ -19,7 +19,7 @@ import copy
 #http://people.csail.mit.edu/hubert/pyaudio/
 #https://github.com/SpotlightKid/python-rtmidi/blob/master/examples/advanced/midiwrapper.py
 
-class entity:
+class audio_complete:
     def __init__(self,waveform,F_H,F_window_size=None,center=True,sample_rate=44100):
         self.wf = waveform
         self._F = None
@@ -36,7 +36,7 @@ class entity:
         
     def clone(self):
         """Copies the parameters and a deepcopy of the waveform"""
-        return entity(copy.deepcopy(self.wf),self.H,self.ws,self.sr)
+        return audio_complete(copy.deepcopy(self.wf),self.H,self.ws,self.sr)
     
     @property
     def F(self):
@@ -216,7 +216,7 @@ def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
     for i in range(N):
         plt.subplot(N,1,i+1)
         spec = spec_list[i]
-        if isinstance(spec,entity):
+        if isinstance(spec,audio_complete):
             spec = spec_list[i].D           
         librosa.display.specshow(spec, y_axis='log',x_axis='time',sr=sr)
         plt.ylabel('Log DB')

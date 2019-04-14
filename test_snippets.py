@@ -467,16 +467,16 @@ ns.add_note(0,0,74,start=0,end=2)
 ns.add_note(0,0,48,start=0.5,end=1.5)
 
 wf = ns.render(sf_path)
-ent = util_audio.entity(wf,buckets)
+ac = util_audio.audio_complete(wf,buckets)
 
 guess = nsequence()
 guess.add_note(0,0,48,0,1)
-ent_guess = util_audio.entity(guess.render(sf_path),buckets)
+ac_guess = util_audio.audio_complete(guess.render(sf_path),buckets)
 
-ent_sub = ent.clone()
-ent_sub.subtract(ent_guess,offset=0.5,attack_compensation = 0)
+ac_sub = ac.clone()
+ac_sub.subtract(ac_guess,offset=0.5,attack_compensation = 0)
 
-util_audio.plot_specs([ent_guess, ent, ent_sub])
+util_audio.plot_specs([ac_guess,ac,ac_sub])
 
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
