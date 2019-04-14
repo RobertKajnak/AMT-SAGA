@@ -152,15 +152,53 @@ class note_sequence:
     #'D:/Soundfonts/HD.sf2'
     #'/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
     def __init__(self, filename= None):
-        
+        """A wrapper class around the magenta midi wrapper that goes around pretty_midi
+        """
         if filename is None:    
             self.sequence = music_pb2.NoteSequence()
         else:
             self.sequence = midi_io.midi_file_to_note_sequence(filename)
+        self.prev_octave = 4
             
+    _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
+             'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
+                 'B':11,'H':11}  
+    
+    def add_note(self, instrument, program, pitch, start, end, velocity=100, is_drum=False):
+        """Adds a note to the current note sequence
+        args:
+            instrument: instrument track (int)
+            program: instrument (0-127) e.g. 0==Grand Piano. 
+                Check e.g. http://www.ccarh.org/courses/253/handout/gminstruments/
+                for more details
+            pitch: pitch either expressed in midi note or string form. 
+                int: Middle C=60.
+                string: 'C', 'c','c#','Db' etc. If a digit is specified after the character, 
+                    it specifies octave octave settings, e.g. C#2 or D2 will 
+                    be in the second octave. If no number is specified, the last 
+                    used octave is taken. Initialized to 4.
+                    Visit https://newt.phys.unsw.edu.au/jw/notes.html for more details
+            start: starting time in seconds
+            end: end time in seconds. Decay is performed after this
+            velocity: strength of pressing the note
+            is_drum: specifies wether it is a drum track
             
-    def add_note(self, instrument, program, pitch, start, end, velocity=100,  is_drum=False):
-        '''Adds a note to the current note sequence'''
+        """
+        if isinstance(pitch,str):
+            try:
+                octave = int(pitch[-1])
+                pitch_lit = pitch[:-1]                    
+            except:
+                octave = self.prev_octave
+                pitch_lit = pitch
+            try:
+                modifier = pitch_lit[1]
+                pitch_lit = pitch_lit[0].upper()
+            except:
+                modifier = ''
+                pitch_lit = pitch_lit.upper()                        
+            pitch = self._notes[pitch_lit+modifier] + (octave+1) * 12
+        
         note = self.sequence.notes.add()
         note.instrument = instrument
         note.program = program
@@ -169,7 +207,7 @@ class note_sequence:
         note.pitch = pitch
         note.velocity = velocity
         note.is_drum = is_drum
-        
+
     def get_notes(self,start, end):
         ''' returns all the notes that have sound the specified period
         '''
@@ -184,6 +222,7 @@ class note_sequence:
         return subsequence
     
     def render(self, soundfont_filename=None,max_duration = None,sample_rate=44100):
+        """Generate waveform for the stored sequence"""
         mid = midi_io.note_sequence_to_pretty_midi(self.sequence)
         wf = mid.fluidsynth(fs=sample_rate, sf2_path=soundfont_filename)
         
@@ -223,9 +262,11 @@ def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
         plt.colorbar(format='%+2.0f dB')
         
 def audio_from_file(audio_filename):
+    """Load the waveform from an audio file. Various extensions supported"""
     return librosa.load(audio_filename,sr=None)    
    
 def audio_to_flac(waveform,filename,sr=44100): 
+    """Save the waveform to a PCM-24 flac file"""
     soundfile.write(filename, waveform, sr, format='flac', subtype='PCM_24')
 
 def midi_from_file(file_name):

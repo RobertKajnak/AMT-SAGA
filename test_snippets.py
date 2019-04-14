@@ -459,25 +459,35 @@ soundfile.write(path + 'wave_test_sub.flac', wf_sub, sr, format='flac', subtype=
 sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
 buckets = 4096
 
+#Generate notes
 ns = nsequence()
-ns.add_note(0,0,67,start=0,end=2)
-ns.add_note(0,0,71,start=0,end=2)
-ns.add_note(0,0,74,start=0,end=2)
+ns.add_note(0,0,'G4',start=0,end=2)
+ns.add_note(0,0,'b',start=0,end=2)
+ns.add_note(0,0,'D5',start=0,end=2)
 
-ns.add_note(0,0,48,start=0.5,end=1.5)
+ns.add_note(0,0,'C3',start=0.5,end=1.5)
 
+#Generate wave and spectral representations
 wf = ns.render(sf_path)
 ac = util_audio.audio_complete(wf,buckets)
 
+#same for the C only
 guess = nsequence()
 guess.add_note(0,0,48,0,1)
 ac_guess = util_audio.audio_complete(guess.render(sf_path),buckets)
 
+#Subtract. Create a copy to plot later
 ac_sub = ac.clone()
 ac_sub.subtract(ac_guess,offset=0.5,attack_compensation = 0)
 
+#plot
 util_audio.plot_specs([ac_guess,ac,ac_sub])
 
+#Save both midi and wav
+path = './data/'
+ac_guess.save(path + 'wave_test_guess.flac')
+ac.save(path + 'wave_test.flac')
+ac_sub.save(path + 'wave_test_sub.flac',)
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)
