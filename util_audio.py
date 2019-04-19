@@ -187,8 +187,10 @@ class note_sequence:
         """
         if filename is None:    
             self.sequence = music_pb2.NoteSequence()
+            self.duration = 0
         else:
             self.sequence = midi_io.midi_file_to_note_sequence(filename)
+            self.duration = self.sequence.notes[-1].end_time
         self.prev_octave = 4
             
     _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
@@ -239,19 +241,27 @@ class note_sequence:
         note.pitch = pitch
         note.velocity = velocity
         note.is_drum = is_drum
+        self.duration = np.max((self.duration,end))
 
     def get_notes(self,start, end):
-        ''' returns all the notes that have sound the specified period
+        ''' Returns:
+                all notes that have sound inside the specified period
+                all notes that have both start and end points within spec. period
         '''
-        subsequence = music_pb2.NoteSequence()
-        notes_to_add = []
+        subsequence_inclusive = music_pb2.NoteSequence()
+        subsequence_exclusive = music_pb2.NoteSequence()
+        notes_to_add_inclusive = []
+        notes_to_add_exclusive = []
         for note in self.sequence.notes:
-            if (note.start_time>start and note.start_time<end) or \
-                    (note.end_time>start and note.end_time<end):
-                notes_to_add.append(note)
+            if (note.start_time>start and note.end_time<end):
+                notes_to_add_exclusive.append(note)
+                notes_to_add_inclusive.append(note)
+            elif (note.end_time>start and note.start_time<end):
+                notes_to_add_exclusive.append(note)
                 
-        subsequence.notes.extend(notes_to_add)
-        return subsequence
+        subsequence_inclusive.notes.extend(notes_to_add_inclusive)
+        subsequence_exclusive.notes.extend(notes_to_add_exclusive )
+        return subsequence_inclusive,subsequence_exclusive 
     
     def render(self, soundfont_filename=None,max_duration = None,sample_rate=44100):
         """Generate waveform for the stored sequence"""
