@@ -133,7 +133,38 @@ class audio_complete:
                          axis = 1)
         if relu:
             self.mag = np.maximum(self.mag,0,self.mag)
-    
+        
+    def _seconds_to_frames(self,time):
+        """Converts a from seconds to frames in fourier"""
+        return int(np.floor(time * self.F.shape[1]/ self.wf.shape[0]/self.sr))
+
+    def resize(self,audio,start,duration,pitch,NN_input_shape):
+        """ A new array is returned that is the resized the audio snippet to 
+            a size good for NN input. Does not modify the instance content
+        """
+        t = self._seconds_to_frames(duration)
+        s = self._seconds_to_frames(start)
+        F = audio.F[:,s:t] #If it is longer, it will take a shorter section starting from s
+        
+        if t==NN_input_shape:
+            resd = F
+        elif t<NN_input_shape:
+            lim = np.min((4,int(np.round(t/3))))
+            resd = F[:,:lim]
+            i = lim
+            lim_inv = F.shape[1]-2*lim
+            while i<NN_input_shape-lim_inv-lim:
+                resd = np.concatenate((resd,F[:,lim:-lim]),axis=1)
+                i+=lim_inv
+            resd = np.concatenate((resd,F[:,-(NN_input_shape-i):]),axis=1)
+        else:
+            lim = np.int(np.min([4,NN_input_shape/3]))
+            cent = int(np.floor(F.shape[1]/2))
+            cl = cent - int(np.floor(NN_input_shape/2)) + lim
+            ch = cent + int(np.ceil(NN_input_shape/2)) - lim 
+            resd = np.concatenate((F[:,:lim],F[:,cl:ch],F[:,-lim:]),axis=1)
+        return resd
+        
     def plot_spec(self,width=12,height = 5):
         
         plt.figure(figsize=(width, height))
@@ -199,6 +230,7 @@ class note_sequence:
                 pitch_lit = pitch_lit.upper()                        
             pitch = self._notes[pitch_lit+modifier] + (octave+1) * 12
         
+        
         note = self.sequence.notes.add()
         note.instrument = instrument
         note.program = program
@@ -235,7 +267,7 @@ class note_sequence:
     def save(self,file_name):
         '''Saves the MIDi file to the specified filename'''
         midi_io.note_sequence_to_midi_file(self.sequence, file_name)
-        
+    
         
 def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
     """ Plots a list of spectrograms or entities
@@ -260,7 +292,7 @@ def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
         librosa.display.specshow(spec, y_axis='log',x_axis='time',sr=sr)
         plt.ylabel('Log DB')
         plt.colorbar(format='%+2.0f dB')
-        
+
 def audio_from_file(audio_filename):
     """Load the waveform from an audio file. Various extensions supported"""
     return librosa.load(audio_filename,sr=None)    
