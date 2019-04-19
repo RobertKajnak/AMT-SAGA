@@ -12,6 +12,7 @@ import librosa
 import soundfile
 import numpy as np
 import matplotlib.pyplot as plt
+from functools import reduce
 
 import copy
 
@@ -136,7 +137,10 @@ class audio_complete:
         
     def _seconds_to_frames(self,time):
         """Converts a from seconds to frames in fourier"""
-        return int(np.floor(time * self.F.shape[1]/ self.wf.shape[0]/self.sr))
+        return int(np.floor(time * self.F.shape[1]*self.sr / self.wf.shape[0]))
+    
+    def _frames_to_seconds(self,frames):
+        return frames/self.F.shape[1]/ self.sr * self.wf.shape[0]
 
     def resize(self,audio,start,duration,pitch,NN_input_shape):
         """ A new array is returned that is the resized the audio snippet to 
@@ -196,6 +200,10 @@ class note_sequence:
     _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
              'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
                  'B':11,'H':11}  
+    
+    def append(self, note):
+        self.sequence.notes.extend([note])
+        self.duration = np.max((self.duration,note.end))
     
     def add_note(self, instrument, program, pitch, start, end, velocity=100, is_drum=False):
         """Adds a note to the current note sequence
@@ -260,8 +268,49 @@ class note_sequence:
                 notes_to_add_exclusive.append(note)
                 
         subsequence_inclusive.notes.extend(notes_to_add_inclusive)
-        subsequence_exclusive.notes.extend(notes_to_add_exclusive )
-        return subsequence_inclusive,subsequence_exclusive 
+        subsequence_exclusive.notes.extend(notes_to_add_exclusive)
+        
+        ns_inc = note_sequence()
+        ns_exc = note_sequence()
+        ns_inc.sequence = subsequence_inclusive
+        ns_inc.duration = subsequence_inclusive.notes[-1]
+        ns_exc.sequence = subsequence_exclusive
+        ns_exc.duration = subsequence_exclusive.notes[-1]
+        
+        return ns_inc,ns_exc 
+    
+    def pop(self,lowest = True, threshold=0.05):
+        """Returns and removes the first element from the note sequence
+        The order is determined by the parameters
+        args:
+            lowst: if True the secondary sorting criteria is pitch, lowest being first
+        """
+        if lowest:
+            def l(x,y):
+                if x.time_start-threshold < y.time_start:
+                    return x
+                elif x.time_start+threshold > y.time_start:
+                    return y
+                else:
+                    if x.pitch<=y.pitch:
+                        return x
+                    else:
+                        return y
+        else: #Saves computational time
+            def l(x,y):
+                if x.time_start-threshold < y.time_start:
+                    return x
+                elif x.time_start+threshold > y.time_start:
+                    return y
+                else:
+                    if x.pitch>=y.pitch:
+                        return x
+                    else:
+                        return y
+        first = reduce(l,self.sequence)
+        self.sequence.remove(first)
+        
+        return first
     
     def render(self, soundfont_filename=None,max_duration = None,sample_rate=44100):
         """Generate waveform for the stored sequence"""
