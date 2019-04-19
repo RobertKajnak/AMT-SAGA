@@ -20,6 +20,7 @@ Created on Sun Mar 24 17:04:08 2019
 
 #from util import midi_from_file
 import numpy as np
+import os
 
 #import RDCNN
 import onset_detector as OnsetDetector
@@ -53,7 +54,8 @@ def pre_train(path,sf_path,params):
     onset_detector = OnsetDetector(params)
     pitch_classifier = PitchClassifier(params)
     instrument_classifier = InsrumentClassifier(params)
-    DEBUG = True
+    DEBUG = 1
+    frametime = params.H / params.sr
 
     dm.set_type('training')        
     for fn in dm:
@@ -62,22 +64,31 @@ def pre_train(path,sf_path,params):
        sheet = note_sequence()
        
        offset = 0
-       no_more_detectable_notes = False
-       while not no_more_detectable_notes:
-           notes_w = mid.get_notes(offset,offset+params.window_size)
+       while offset<mid.duration:
+           notes_w,notes_target = mid.get_notes(offset,offset+params.window_size)
            audio_w = audio_complete(notes_w.render_notes(sf_path),params.H)
+           if DEBUG:
+               audio_w.save(path+str(DEBUG)+'.wav')
+               notes_target.save(path+str(DEBUG)+'_target.mid')
+               notes_w.save(path+str(DEBUG)+'_inclusive.mid')
            
-           onset_s,duration_s = onset_detector.detect(audio_w)
+           note_gold = notes_w.pop(lowest=True,threshold = frametime)
+           onset_gold  =note_gold.start_time
+           duration_gold = note_gold.end_time-note_gold.start_time
+           pitch_gold =  note_gold.pitch
+           instrument_gold = note_gold.program
+           onset_s,duration_s = onset_detector.detect(audio_w,onset_gold,duration_gold)
            
+           onset_s = onset_gold
            #use correct value to move window
            if onset_s>params.window_th:
                offset+=onset_s
                continue
            
-           pitch_s = pitch_classifier.classify(audio_w)
+           pitch_s = pitch_classifier.classify(audio_w,pitch_gold)
            
-           audio_sw = audio_util.resize(audio_w,onset_s,duration_s,pitch_s,params.pitch_input_shape)
-           instrument_sw = instrument_classifier.classify(audio_sw)
+           audio_sw = audio_w.resize(onset_s,duration_s,pitch_s,params.pitch_input_shape)
+           instrument_sw = instrument_classifier.classify(audio_sw,instrument_gold)
            
            sheet.add(instrument_sw,instrument_sw,pitch_s,onset_s+offset,onset_s+offset+duration_s)
            
@@ -90,6 +101,7 @@ if __name__ == '__main__':
     path = './data/'
     sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
     p = hyperparams()
+    p.path = path
     
     pre_train(path,sf_path,p)
     
