@@ -142,13 +142,13 @@ class audio_complete:
     def _frames_to_seconds(self,frames):
         return frames/self.F.shape[1]/ self.sr * self.wf.shape[0]
 
-    def resize(self,audio,start,duration,pitch,NN_input_shape):
+    def resize(self,start,duration,pitch,NN_input_shape):
         """ A new array is returned that is the resized the audio snippet to 
             a size good for NN input. Does not modify the instance content
         """
         t = self._seconds_to_frames(duration)
         s = self._seconds_to_frames(start)
-        F = audio.F[:,s:t] #If it is longer, it will take a shorter section starting from s
+        F = self.F[:,s:t] #If it is longer, it will take a shorter section starting from s
         
         if t==NN_input_shape:
             resd = F
@@ -192,18 +192,35 @@ class note_sequence:
         if filename is None:    
             self.sequence = music_pb2.NoteSequence()
             self.duration = 0
+            self.start_first = 0
         else:
             self.sequence = midi_io.midi_file_to_note_sequence(filename)
             self.duration = self.sequence.notes[-1].end_time
+            self.start_first = self.sequence.notes[0].start_time
         self.prev_octave = 4
             
     _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
              'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
                  'B':11,'H':11}  
     
-    def append(self, note):
+    def append(self, note, copy=False):
+        """If copy is set to true, the note is cloned first. Otherwise reference is passed
+        """
+        if copy:
+            #Double-checked manually, these are all primitives
+            note2 = self.sequence.notes.add()
+            note2.instrument = note.instrument
+            note2.program = note.program
+            note2.start_time = note.start_time
+            note2.end_time = note.end_time
+            note2.pitch = note.pitch
+            note2.velocity = note.velocity
+            note2.is_drum = note.is_drum
+            note = note2
+            
         self.sequence.notes.extend([note])
-        self.duration = np.max((self.duration,note.end))
+        self.duration = np.max((self.duration,note.end_time))
+        self.start_first = np.min((self.start_first,note.start_time))
     
     def add_note(self, instrument, program, pitch, start, end, velocity=100, is_drum=False):
         """Adds a note to the current note sequence
@@ -250,6 +267,7 @@ class note_sequence:
         note.velocity = velocity
         note.is_drum = is_drum
         self.duration = np.max((self.duration,end))
+        self.start_first = np.min((self.start_first,start))
 
     def get_notes(self,start, end):
         ''' Returns:
@@ -279,17 +297,40 @@ class note_sequence:
         
         return ns_inc,ns_exc 
     
+    def clone(self):
+        s_clone = note_sequence()
+        s_clone.prev_octave = self.prev_octave
+        
+        for note in self.sequence.notes:
+            s_clone.append(note,copy=True)
+        return s_clone
+    
+    def shift(self, time):
+        for note in self.sequence.notes:
+            note.start_time+=time
+            note.end_time+=time
+        
+        self.duration += time
+        self.start_first += time
+    
     def pop(self,lowest = True, threshold=0.05):
         """Returns and removes the first element from the note sequence
         The order is determined by the parameters
         args:
             lowst: if True the secondary sorting criteria is pitch, lowest being first
         """
+        if len(self.sequence.notes) == 1:
+            first = self.sequence.notes[0]
+            self.sequence.notes.remove(first)
+            return first
+        elif len(self.sequence.notes) == 0:
+            return None
+        
         if lowest:
             def l(x,y):
-                if x.time_start-threshold < y.time_start:
+                if x.start_time-threshold < y.start_time:
                     return x
-                elif x.time_start+threshold > y.time_start:
+                elif x.start_time+threshold > y.start_time:
                     return y
                 else:
                     if x.pitch<=y.pitch:
@@ -298,17 +339,22 @@ class note_sequence:
                         return y
         else: #Saves computational time
             def l(x,y):
-                if x.time_start-threshold < y.time_start:
+                if x.start_time-threshold < y.start_time:
                     return x
-                elif x.time_start+threshold > y.time_start:
+                elif x.start_time+threshold > y.start_time:
                     return y
                 else:
                     if x.pitch>=y.pitch:
                         return x
                     else:
                         return y
-        first = reduce(l,self.sequence)
-        self.sequence.remove(first)
+        first = reduce(l,self.sequence.notes)
+        self.sequence.notes.remove(first)
+        
+        if first.start_time==self.start_first:
+            self.start_first = np.min((self.start_first,reduce(lambda x,y: x if x.start_time<y.start_time else y,self.sequence.notes)))
+        if first.end_time==self.duration:
+            self.duration = np.max((self.duration,reduce(lambda x,y: x if x.end_time>y.end_time else y,self.sequence.notes)))
         
         return first
     
