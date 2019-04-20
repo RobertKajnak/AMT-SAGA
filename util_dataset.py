@@ -26,7 +26,7 @@ class DataManager():
             l_sort = True
             
         get_filenames = lambda dn1,nd2: sorted([name for name in 
-                                os.listdir(os.path.join(path,os.path.join(dn1,nd2)))], 
+                                os.listdir(os.path.join(path,dn1,nd2))], 
                                 key=l_sort)
         #s = set; t =type
         for s in sets:
@@ -39,7 +39,7 @@ class DataManager():
         self.index = 0
         
     def _append_path(self,s,t,fn):
-        return os.path.join(os.path.join(self.path,os.path.join(s,t)),fn)
+        return os.path.join(self.path,s,t,fn)
         
     def set_set(self, new_set):
         ''' new_type should be one from the ones specified in the constructor
@@ -63,7 +63,7 @@ class DataManager():
             #get all the filenames for all the folder types in current set for the first name
             for k in cset.keys():
                 if self.is_full_path:
-                    candidates.append(self._append_path(self.set_c,k,cset[k][self.index]))
+                    candidates.append(os.path.join(self.path,self.set_c,k,cset[k][self.index]))
                 else:
                     candidates.append(cset[k][self.index])
             
