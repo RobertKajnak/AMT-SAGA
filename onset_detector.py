@@ -11,8 +11,8 @@ import numpy as np
 class onset_detector:
     def __init__(self,params):
         self.params = params
-    def detect(self, ac):
+    def detect(self, ac,start_gold=None,duration_gold=None):
         start = np.random.rand()*ac.F.shape[1]
         duration = np.random.rand()*(ac.F.shape[1]-start)
         
-        return start,duration
+        return int(start),int(duration)

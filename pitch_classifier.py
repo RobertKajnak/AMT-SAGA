@@ -12,5 +12,5 @@ class pitch_classifier:
     def __init__(self,params):
         self.params = params
         
-    def classify(self,arg):
-        return np.random.rand()*107
+    def classify(self,arg,pitch_gold):
+        return int(np.random.rand()*107)

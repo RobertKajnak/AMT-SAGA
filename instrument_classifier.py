@@ -12,5 +12,5 @@ class instrument_classifier:
     def __init__(self,params):
         self.params = params
         
-    def classify(self,arg):
-        return np.random.rand()*127
+    def classify(self,arg,instrument_gold=None):
+        return int(np.random.rand()*127)
