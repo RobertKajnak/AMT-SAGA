@@ -4,7 +4,7 @@ import os
 class DataManager():
     def __init__(self, path, 
                  types=['midi','audio'], sets=['training','validation','test'],
-                 sort=True):
+                 sort=True, return_full_path_on_iteration = True):
         """ Class for fetching filenames from the directories.
             args:
                 path: parent directory
@@ -15,6 +15,8 @@ class DataManager():
         """
         self.sets = sets
         self.types = types
+        self.path = path
+        self.is_full_path = return_full_path_on_iteration
         
         self.data={}
         
@@ -26,15 +28,18 @@ class DataManager():
         get_filenames = lambda dn1,nd2: sorted([name for name in 
                                 os.listdir(os.path.join(path,os.path.join(dn1,nd2)))], 
                                 key=l_sort)
-        
+        #s = set; t =type
         for s in sets:
             self.data[s] = {}
             for t in types:
                 self.data[s][t] = get_filenames(s,t)
                 
+        #set_current
         self.set_c = sets[0]
         self.index = 0
         
+    def _append_path(self,s,t,fn):
+        return os.path.join(os.path.join(self.path,os.path.join(s,t)),fn)
         
     def set_set(self, new_set):
         ''' new_type should be one from the ones specified in the constructor
@@ -50,15 +55,23 @@ class DataManager():
         return self
 
     def __next__(self):        
+        #get pointer to the dict containing the current set
         cset = self.data[self.set_c]
+        
         if self.index<len(cset[self.types[0]]):
             candidates = []
+            #get all the filenames for all the folder types in current set for the first name
             for k in cset.keys():
-                candidates.append(cset[k][self.index])
+                if self.is_full_path:
+                    candidates.append(self._append_path(self.set_c,k,cset[k][self.index]))
+                else:
+                    candidates.append(cset[k][self.index])
             
-            cprev = candidates[0]
-            for cand in candidates:
-                if cand[:cand.rfind('.')].upper() != cprev[:cand.rfind('.')].upper():
+            #Check if last part of the path matches
+            cprev = os.path.split(candidates[0])[-1]
+            for full_cand in candidates:
+                cand = os.path.split(full_cand)[-1]
+                if cand[:cand.rfind('.')].upper() != cprev[:cprev.rfind('.')].upper():
                     raise Exception('Pair title mismatch')
                 cprev = cand
             self.index +=1
