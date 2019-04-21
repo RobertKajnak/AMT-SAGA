@@ -149,18 +149,22 @@ class audio_complete:
         t = self._seconds_to_frames(duration)
         s = self._seconds_to_frames(start)
         F = self.F[:,s:t] #If it is longer, it will take a shorter section starting from s
+        t = self.F.shape[1]
         
-        if t==NN_input_shape:
+        if t==0:
+            return np.zeros((F.shape[0],NN_input_shape))
+        elif t==NN_input_shape:
             resd = F
+        elif t<3:
+            resd = np.tile(F[:,-1:],NN_input_shape)
         elif t<NN_input_shape:
             lim = np.min((4,int(np.round(t/3))))
-            resd = F[:,:lim]
-            i = lim
-            lim_inv = F.shape[1]-2*lim
-            while i<NN_input_shape-lim_inv-lim:
-                resd = np.concatenate((resd,F[:,lim:-lim]),axis=1)
-                i+=lim_inv
-            resd = np.concatenate((resd,F[:,-(NN_input_shape-i):]),axis=1)
+            l_t = int(np.floor((NN_input_shape - 2 * lim)/(t-2*lim)))
+            tiled = np.tile(F[:,lim:-lim],l_t)
+            resd = np.concatenate((F[:,:lim],
+                                   tiled,
+                                   F[:,-(NN_input_shape-tiled.shape[1]-lim):]),
+                                   axis=1)
         else:
             lim = np.int(np.min([4,NN_input_shape/3]))
             cent = int(np.floor(F.shape[1]/2))
