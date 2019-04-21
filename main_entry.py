@@ -17,11 +17,11 @@ from util_audio import audio_complete
 
 
 class hyperparams:
-    def __init__(self,N=4096,sr =44100,H=None,window_size = None,window_th = None):
+    def __init__(self,N=4096,sr =44100,H=None,window_size_note_time = None,window_th = None):
         self.N=N
         self.sr =sr
         self.H = np.int(N/4) if H is None else H
-        self.window_size = 3  if window_size is None else window_size#in FS
+        self.window_size_note_time = 3  if window_size_note_time is None else window_size_note_time#in FS
         self.window_th = 0.2 if window_th is None else window_th
         self.pitch_input_shape = 20
         
@@ -57,7 +57,7 @@ def pre_train(path,sf_path,params):
        sheet = note_sequence()
        
        offset = 0
-       audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size,params.H)
+       audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size_note_time,params.N)
        while offset<mid.duration:
            
            if DEBUG:
@@ -74,17 +74,18 @@ def pre_train(path,sf_path,params):
            if note_gold is not None:
                onset_gold = note_gold.start_time
                duration_gold = note_gold.end_time-note_gold.start_time
-               pitch_gold =     note_gold.pitch
+               pitch_gold = note_gold.pitch
                instrument_gold = note_gold.program
            else:
                onset_gold = params.window_th+offset
            onset_s,duration_s = onset_detector.detect(audio_w,onset_gold,duration_gold)
            
            onset_s = onset_gold
+           duration_s = duration_gold
            #use correct value to move window
-           if onset_s>=params.window_th+offset:
-               offset+=onset_s
-               audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size,params.H)
+           if onset_s+duration_s>=params.window_size_note_time+offset:
+               offset+=onset_s - params.window_th
+               audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size_note_time,params.N)
                continue
            
            pitch_s = pitch_classifier.classify(audio_w,pitch_gold)

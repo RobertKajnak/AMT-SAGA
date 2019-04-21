@@ -21,7 +21,7 @@ import copy
 #https://github.com/SpotlightKid/python-rtmidi/blob/master/examples/advanced/midiwrapper.py
 
 class audio_complete:
-    def __init__(self,waveform,F_H,F_window_size=None,center=True,sample_rate=44100):
+    def __init__(self,waveform,n_fft,hop_size=None,center=True,sample_rate=44100):
         self.wf = waveform
         self._F = None
         self._mag = None
@@ -30,20 +30,20 @@ class audio_complete:
         self._D = None
         
         self.sr = sample_rate
-        self.H = F_H
+        self.N = n_fft
         self.center = center
-        self.ws = F_window_size
+        self.hs = hop_size
         
         
     def clone(self):
         """Copies the parameters and a deepcopy of the waveform"""
-        return audio_complete(copy.deepcopy(self.wf),self.H,self.ws,self.sr)
+        return audio_complete(copy.deepcopy(self.wf),self.N,self.hs,self.sr)
     
     @property
     def F(self):
         if self._F is None:
-            self._F = librosa.stft(self.wf,n_fft = self.H,
-                                   win_length=self.ws,center=self.center)
+            self._F = librosa.stft(self.wf,n_fft = self.N,
+                                   win_length=self.hs,center=self.center)
         return self._F
     @F.setter
     def F(self,value):
