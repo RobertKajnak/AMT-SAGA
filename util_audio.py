@@ -21,7 +21,7 @@ import copy
 #https://github.com/SpotlightKid/python-rtmidi/blob/master/examples/advanced/midiwrapper.py
 
 class audio_complete:
-    def __init__(self,waveform,n_fft,hop_size=None,center=True,sample_rate=44100):
+    def __init__(self,waveform,n_fft,hop_length=None,center=True,sample_rate=44100):
         self.wf = waveform
         self._F = None
         self._mag = None
@@ -32,7 +32,7 @@ class audio_complete:
         self.sr = sample_rate
         self.N = n_fft
         self.center = center
-        self.hs = hop_size
+        self.hl = hop_length if hop_length is not None else int(np.floor(n_fft/4))
         
         
     def clone(self):
@@ -43,7 +43,7 @@ class audio_complete:
     def F(self):
         if self._F is None:
             self._F = librosa.stft(self.wf,n_fft = self.N,
-                                   win_length=self.hs,center=self.center)
+                                   hop_length=self.hl,center=self.center)
         return self._F
     @F.setter
     def F(self,value):
@@ -52,7 +52,8 @@ class audio_complete:
         self._mag = None
         self._ph = None
         self._F = value
-        self.wf = librosa.istft(self._F)
+        self.wf = librosa.istft(self._F,
+                                   hop_length=self.hl,center=self.center)
     
     @property
     def mag(self):
@@ -142,6 +143,29 @@ class audio_complete:
     def _frames_to_seconds(self,frames):
         return frames/self.F.shape[1]/ self.sr * self.wf.shape[0]
 
+    def section(self, start,end):
+        """Creates a copy of a section and returns it. The D, F et.c will remain calculated
+        Start and end specified in seconds. They will be rounded down to the nearest
+        Fourier frame"""
+        tfs = self._seconds_to_frames(start)
+        tfe = self._seconds_to_frames(end)
+        
+        nac = audio_complete(copy.deepcopy(self.wf[int(np.floor(self._frames_to_seconds(tfs) * self.sr)):\
+                                    int(np.floor(self._frames_to_seconds(tfe) * self.sr))]),
+                             self.N,hop_length=self.hl,center=self.center,sample_rate=self.sr)
+        
+        def cc(f):
+            if f is not None:
+                return copy.deepcopy(f[:,tfs:tfe])
+    
+        nac._F = cc(self._F)
+        nac._ref_mag = self._ref_mag
+        nac._mag = cc(self._mag)
+        nac._ph =cc(self._ph)
+        nac._D = cc(self._D,)
+        
+        return nac
+
     def resize(self,start,duration,pitch,NN_input_shape):
         """ A new array is returned that is the resized the audio snippet to 
             a size good for NN input. Does not modify the instance content
@@ -178,7 +202,7 @@ class audio_complete:
         plt.figure(figsize=(width, height))
 
         plt.subplot(1,1,1)
-        librosa.display.specshow(self.D, y_axis='log',x_axis='time',sr=self.sr)
+        librosa.display.specshow(self.D, y_axis='log',x_axis='time',sr=self.sr,hop_length = self.hl)
         plt.ylabel('Log DB')
         plt.colorbar(format='%+2.0f dB')
 
@@ -221,8 +245,8 @@ class note_sequence:
             note2.velocity = note.velocity
             note2.is_drum = note.is_drum
             note = note2
-            
-        self.sequence.notes.extend([note])
+        else:
+            self.sequence.notes.extend([note])
         self.duration = np.max((self.duration,note.end_time))
         self.start_first = np.min((self.start_first,note.start_time))
     
@@ -289,16 +313,20 @@ class note_sequence:
             elif (note.end_time>start and note.start_time<end):
                 notes_to_add_exclusive.append(note)
                 
-        subsequence_inclusive.notes.extend(notes_to_add_inclusive)
-        subsequence_exclusive.notes.extend(notes_to_add_exclusive)
+                
+        ns_exc = note_sequence()
+        if len (notes_to_add_exclusive) != 0:
+            subsequence_exclusive.notes.extend(notes_to_add_exclusive)
+            ns_exc.sequence = subsequence_exclusive
+            ns_exc.duration = subsequence_exclusive.notes[-1]
         
         ns_inc = note_sequence()
-        ns_exc = note_sequence()
-        ns_inc.sequence = subsequence_inclusive
-        ns_inc.duration = subsequence_inclusive.notes[-1]
-        ns_exc.sequence = subsequence_exclusive
-        ns_exc.duration = subsequence_exclusive.notes[-1]
-        
+        if len(notes_to_add_inclusive) !=0:
+            subsequence_inclusive.notes.extend(notes_to_add_inclusive)
+            
+            ns_inc.sequence = subsequence_inclusive
+            ns_inc.duration = subsequence_inclusive.notes[-1]
+            
         return ns_inc,ns_exc 
     
     def clone(self):
@@ -355,10 +383,14 @@ class note_sequence:
         first = reduce(l,self.sequence.notes)
         self.sequence.notes.remove(first)
         
-        if first.start_time==self.start_first:
-            self.start_first = np.min((self.start_first,reduce(lambda x,y: x if x.start_time<y.start_time else y,self.sequence.notes)))
-        if first.end_time==self.duration:
-            self.duration = np.max((self.duration,reduce(lambda x,y: x if x.end_time>y.end_time else y,self.sequence.notes)))
+        if len(self.sequence.notes)==1:
+            self.start_first = self.sequence.notes[0].start_time
+            self.duration  = self.sequence.notes[0].end_time
+        else:
+            if first.start_time==self.start_first:
+                self.start_first = np.min((self.start_first,reduce(lambda x,y: x if x.start_time<y.start_time else y,self.sequence.notes).start_time))            
+            if first.end_time==self.duration:
+                self.duration = np.max((self.duration,reduce(lambda x,y: x if x.end_time>y.end_time else y,self.sequence.notes).end_time))
         
         return first
     
