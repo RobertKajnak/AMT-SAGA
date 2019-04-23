@@ -28,13 +28,18 @@ class hyperparams:
 def relevant_notes(sequence, offset, duration,N):
     
     notes_w,notes_target = sequence.get_notes(offset,offset+duration)
+#    if len(notes_w.sequence.notes)==0 or len(notes_target.sequence.notes)==0:
+#        return audio_complete(np.zeros(44100*duration),N),note_sequence(),note_sequence()
     minus = notes_w.start_first
     
     notes_w = notes_w.clone()
     notes_w.shift(-minus)
-    audio = audio_complete(notes_w.render(sf_path),N)
+    if len(notes_w.sequence.notes)==0:
+        audio = audio_complete(np.zeros(44100*duration),N)
+    else:
+        audio = audio_complete(notes_w.render(sf_path),N)   
+        audio.wf = audio.wf[int(offset-minus)*audio.sr:]
     print(offset,minus)
-    audio.wf = audio.wf[int(offset-minus)*audio.sr:]
     
     notes_target = notes_target.clone()
     notes_target.shift(-offset)
@@ -47,7 +52,6 @@ def pre_train(path,sf_path,params):
     onset_detector = OnsetDetector(params)
     pitch_classifier = PitchClassifier(params)
     instrument_classifier = InsrumentClassifier(params)
-    DEBUG = 1
     frametime = params.H / params.sr
 
     dm.set_set('training')        
@@ -56,35 +60,43 @@ def pre_train(path,sf_path,params):
        
        sheet = note_sequence()
        
+       DEBUG = 1     
+       if DEBUG:
+           audio_w_last = None
        offset = 0
+
        audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size_note_time,params.N)
        while offset<mid.duration:
            
            if DEBUG:
                fn_base = os.path.join(path,'debug',os.path.split(fn[0])[-1][:-4]+str(DEBUG))
                print(fn_base)
-               audio_w.save(fn_base+'.flac')
+               if audio_w is not audio_w_last:   
+                   audio_w.save(fn_base+'.flac')
+#               audio_complete(notes_target.render(sf_path),params.N).save(fn_base + '_target.flac')# -- tested, this works as intended
+               audio_w_last = audio_w
                notes_target.save(fn_base+'_target.mid')
                notes_w.save(fn_base+'_inclusive.mid')
                DEBUG += 1
            
            note_gold = notes_target.pop(lowest=True,threshold = frametime)
-           print(note_gold) 
            #training
            if note_gold is not None:
+               print(offset, note_gold.start_time)
                onset_gold = note_gold.start_time
                duration_gold = note_gold.end_time-note_gold.start_time
                pitch_gold = note_gold.pitch
                instrument_gold = note_gold.program
            else:
-               onset_gold = params.window_th+offset
+               onset_gold = params.window_size_note_time+offset
            onset_s,duration_s = onset_detector.detect(audio_w,onset_gold,duration_gold)
            
            onset_s = onset_gold
            duration_s = duration_gold
            #use correct value to move window
-           if onset_s+duration_s>=params.window_size_note_time+offset:
-               offset+=onset_s - params.window_th
+           if onset_s+duration_s>=offset + params.window_size_note_time:
+               #TODO: Finetune window shift
+               offset+= params.window_size_note_time - params.window_th
                audio_w, notes_target, notes_w = relevant_notes(mid,offset,params.window_size_note_time,params.N)
                continue
            
@@ -101,8 +113,8 @@ def pre_train(path,sf_path,params):
 #           audio_w.subtract(note_guessed.render(),params.N)
            
            sheet.add_note(instrument_sw,instrument_sw,pitch_s,onset_s+offset,onset_s+offset+duration_s)
-           
-       sheet.save(fn[:-4] + '_t.mid') 
+           note_last = note_gold
+       sheet.save(fn[0][:-4] + '_t.mid') 
     
 
 
@@ -110,7 +122,7 @@ if __name__ == '__main__':
     # Hyperparams
     path = './data/'
     sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
-    p = hyperparams()
+    p = hyperparams(window_size_note_time=5)
     p.path = path
     
     pre_train(path,sf_path,p)
