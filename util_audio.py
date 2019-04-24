@@ -126,8 +126,11 @@ class audio_complete:
                 
         mag_sub *= overkill_factor
         
-        total_s = self.wf.shape[0]/self.sr
-        offset = np.int(np.floor( self.mag.shape[1]/total_s * offset) )- attack_compensation
+        offset = self._seconds_to_frames(offset) - attack_compensation
+        
+        if mag_sub.shape[1]+offset>self.mag.shape[1]:
+            mag_sub = mag_sub[:,:(self.mag.shape[1]-offset)]
+        
         self.mag -= np.concatenate(
                          (np.zeros((self.mag.shape[0],offset)) ,
                          mag_sub,
@@ -325,7 +328,7 @@ class note_sequence:
                 notes_to_add_exclusive.append(note)
                 notes_to_add_inclusive.append(note)
             elif (note.end_time>start and note.start_time<end):
-                notes_to_add_exclusive.append(note)
+                notes_to_add_inclusive.append(note)
                 
                 
         ns_exc = note_sequence()
@@ -417,7 +420,8 @@ class note_sequence:
             return wf
         else:
             return wf[:max_duration*sample_rate]
-        
+    def __str__(self):
+        return self.sequence.__str__()
         
     def save(self,file_name):
         '''Saves the MIDi file to the specified filename'''

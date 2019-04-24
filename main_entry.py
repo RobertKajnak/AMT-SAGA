@@ -60,6 +60,8 @@ def pre_train(path,sf_path,params):
        offset = 0
        
        mid_wf = audio_complete(mid.render(sf_path),params.N-2)
+       #TODO - Remove drums
+       #TODO -  Add random instrument shifts
        audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.timing_input_shape)
        while offset<mid.duration:
            
@@ -70,7 +72,7 @@ def pre_train(path,sf_path,params):
                audio_w.save(fn_base+'.flac')
 #               audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
                 
-               audio_w_last = audio_w
+#               audio_w_last = audio_w
                #notes_target.save(fn_base+'_target.mid')
                #notes_w.save(fn_base+'_inclusive.mid')
                DEBUG += 1
@@ -89,7 +91,10 @@ def pre_train(path,sf_path,params):
            
            #use correct value to move window
            if onset_gold+duration_gold>=offset + params.window_size_note_time:
-               #TODO: Finetune window shift
+               #TODO: Finetune window shift -- need to subtract the end of 
+               # the subtracted notes from subsequent windows, otherwise,
+               # they sound like they start there. Or remove overlapping notes
+               
                offset+= params.window_size_note_time - params.window_th
                audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.timing_input_shape)
                continue
@@ -101,11 +106,16 @@ def pre_train(path,sf_path,params):
            instrument_sw = instrument_classifier.classify(audio_sw,instrument_gold)
            
            #subtract correct note for training:
-#           note_guessed = note_sequence()
-#           note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold, 
-#                                 onset_gold, onset_gold+duration_gold, velocity=100, 
-#                                 is_drum=False)
-#           audio_w.subtract(note_guessed.render(),params.N)
+           note_guessed = note_sequence()
+           note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold, 
+                                 0, duration_gold, velocity=100, 
+                                 is_drum=False)
+           print(onset_gold)
+           ac_note_guessed = audio_complete(note_guessed.render(sf_path),params.N-2)
+           if DEBUG:
+               ac_note_guessed.save(fn_base+'_guess.flac')
+#               note_last = note_gold
+           audio_w.subtract(ac_note_guessed, offset= onset_gold)
            
            
            onset_s = onset_gold
@@ -113,7 +123,7 @@ def pre_train(path,sf_path,params):
            pitch_s = pitch_gold
            duration_s = duration_gold
            sheet.add_note(instrument_sw,instrument_sw,pitch_s,onset_s+offset,onset_s+offset+duration_s)
-           note_last = note_gold
+           
        fn_result = os.path.join(path,'results',os.path.split(fn[0])[-1])  
        sheet.save(fn_result) 
        audio_complete(sheet.render(sf_path),params.N-2).save(fn_result+'.flac')
