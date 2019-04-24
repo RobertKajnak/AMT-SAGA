@@ -13,4 +13,6 @@ class instrument_classifier:
         self.params = params
         
     def classify(self,arg,instrument_gold=None):
+        if arg.shape != (self.params.N/2,self.params.pitch_input_shape):
+            raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.format((int(self.params.N/2),self.params.pitch_input_shape),arg.shape))
         return int(np.random.rand()*127)

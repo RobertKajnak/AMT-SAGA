@@ -37,7 +37,7 @@ class audio_complete:
         
     def clone(self):
         """Copies the parameters and a deepcopy of the waveform"""
-        return audio_complete(copy.deepcopy(self.wf),self.N,self.hs,self.sr)
+        return audio_complete(copy.deepcopy(self.wf),self.N,self.hl,self.sr)
     
     @property
     def F(self):
@@ -143,20 +143,34 @@ class audio_complete:
     def _frames_to_seconds(self,frames):
         return frames/self.F.shape[1]/ self.sr * self.wf.shape[0]
 
-    def section(self, start,end):
+    def section(self, start,end, duration_in_frames=None):
         """Creates a copy of a section and returns it. The D, F et.c will remain calculated
         Start and end specified in seconds. They will be rounded down to the nearest
-        Fourier frame"""
+        Fourier frame. If duration in frames is specifies, it overrides the end time specification.
+        If the section specified is bigger than the array, the remainder is padded with 0s"""
         tfs = self._seconds_to_frames(start)
-        tfe = self._seconds_to_frames(end)
+        if duration_in_frames is None:
+            tfe = self._seconds_to_frames(end)
+        else:
+            tfe = tfs+duration_in_frames
         
-        nac = audio_complete(copy.deepcopy(self.wf[int(np.floor(self._frames_to_seconds(tfs) * self.sr)):\
-                                    int(np.floor(self._frames_to_seconds(tfe) * self.sr))]),
+        wav_start = int(np.floor(self._frames_to_seconds(tfs) * self.sr))
+        wav_end = int(np.floor(self._frames_to_seconds(tfe) * self.sr))
+        wav_cp = copy.deepcopy(self.wf[wav_start:wav_end])
+        if wav_cp.shape[0]<wav_end-wav_start:
+            wav_cp = np.concatenate((wav_cp,np.zeros(wav_end - wav_cp.shape[0])))
+        nac = audio_complete(wav_cp,
                              self.N,hop_length=self.hl,center=self.center,sample_rate=self.sr)
         
         def cc(f):
             if f is not None:
-                return copy.deepcopy(f[:,tfs:tfe])
+                cpd = copy.deepcopy(f[:,tfs:tfe])
+                if f.shape[1]>=tfe:
+                    return cpd
+                else:
+                    return np.concatenate((cpd,np.zeros(
+                                            (f.shape[0],tfe-f.shape[1])))
+                                          ,axis=1)
     
         nac._F = cc(self._F)
         nac._ref_mag = self._ref_mag
@@ -166,14 +180,14 @@ class audio_complete:
         
         return nac
 
-    def resize(self,start,duration,pitch,NN_input_shape):
+    def resize(self,start,duration,NN_input_shape):
         """ A new array is returned that is the resized the audio snippet to 
             a size good for NN input. Does not modify the instance content
         """
         t = self._seconds_to_frames(duration)
         s = self._seconds_to_frames(start)
         F = self.F[:,s:t] #If it is longer, it will take a shorter section starting from s
-        t = self.F.shape[1]
+        t = F.shape[1]
         
         if t==0:
             return np.zeros((F.shape[0],NN_input_shape))

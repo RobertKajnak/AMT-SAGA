@@ -24,14 +24,15 @@ class hyperparams:
         self.window_size_note_time = 3  if window_size_note_time is None else window_size_note_time#in FS
         self.window_th = 0.2 if window_th is None else window_th
         self.pitch_input_shape = 20
+        self.timing_input_shape = 215
         
-def relevant_notes(sequence, audio, offset, duration,N):
+def relevant_notes(sequence, audio, offset, duration, duration_in_frames):
     
     notes_w,notes_target = sequence.get_notes(offset,offset+duration)
     minus = notes_w.start_first
     
     notes_w = notes_w.clone()
-    audio = audio.section(offset,offset+duration)
+    audio = audio.section(offset,None,duration_in_frames)
     print(offset,minus)
     
     notes_target = notes_target.clone()
@@ -58,16 +59,16 @@ def pre_train(path,sf_path,params):
            audio_w_last = None
        offset = 0
        
-       mid_wf = audio_complete(mid.render(sf_path),params.N)
-       audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.N)
+       mid_wf = audio_complete(mid.render(sf_path),params.N-2)
+       audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.timing_input_shape)
        while offset<mid.duration:
            
            if DEBUG:
                fn_base = os.path.join(path,'debug',os.path.split(fn[0])[-1][:-4]+str(DEBUG))
                print(fn_base)
-               if audio_w is not audio_w_last:   
-                   audio_w.save(fn_base+'.flac')
-#               audio_complete(notes_target.render(sf_path),params.N).save(fn_base + '_target.flac')# -- tested, this works as intended
+#               if audio_w is not audio_w_last:   
+               audio_w.save(fn_base+'.flac')
+#               audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
                 
                audio_w_last = audio_w
                #notes_target.save(fn_base+'_target.mid')
@@ -86,18 +87,17 @@ def pre_train(path,sf_path,params):
                onset_gold = params.window_size_note_time+offset
            onset_s,duration_s = onset_detector.detect(audio_w,onset_gold,duration_gold)
            
-           onset_s = onset_gold
-           duration_s = duration_gold
            #use correct value to move window
-           if onset_s+duration_s>=offset + params.window_size_note_time:
+           if onset_gold+duration_gold>=offset + params.window_size_note_time:
                #TODO: Finetune window shift
                offset+= params.window_size_note_time - params.window_th
-               audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.N)
+               audio_w, notes_target, notes_w = relevant_notes(mid,mid_wf,offset,params.window_size_note_time,params.timing_input_shape)
                continue
            
-           pitch_s = pitch_classifier.classify(audio_w,pitch_gold)
            
-           audio_sw = audio_w.resize(onset_s,duration_s,pitch_s,params.pitch_input_shape)
+           audio_sw = audio_w.resize(onset_gold,duration_gold,params.pitch_input_shape)
+
+           pitch_s = pitch_classifier.classify(audio_sw,pitch_gold)
            instrument_sw = instrument_classifier.classify(audio_sw,instrument_gold)
            
            #subtract correct note for training:
@@ -107,9 +107,16 @@ def pre_train(path,sf_path,params):
 #                                 is_drum=False)
 #           audio_w.subtract(note_guessed.render(),params.N)
            
+           
+           onset_s = onset_gold
+           instrument_sw = instrument_gold
+           pitch_s = pitch_gold
+           duration_s = duration_gold
            sheet.add_note(instrument_sw,instrument_sw,pitch_s,onset_s+offset,onset_s+offset+duration_s)
            note_last = note_gold
-       sheet.save(fn[0][:-4] + '_t.mid') 
+       fn_result = os.path.join(path,'results',os.path.split(fn[0])[-1])  
+       sheet.save(fn_result) 
+       audio_complete(sheet.render(sf_path),params.N-2).save(fn_result+'.flac')
     
 
 
