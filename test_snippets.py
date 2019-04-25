@@ -21,6 +21,9 @@ import soundfile
 import scipy
 
 import fluidsynth
+
+import tensorflow.keras as keras
+from RDCNN import res_net
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 #%% Predef functions
@@ -488,6 +491,43 @@ path = './data/'
 ac_guess.save(path + 'wave_test_guess.flac')
 ac.save(path + 'wave_test.flac')
 ac_sub.save(path + 'wave_test_sub.flac',)
+
+
+#%% RNN test
+fashion_mnist = keras.datasets.fashion_mnist
+
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+
+train_images = train_images.reshape(train_images.shape[0],28,28,1)
+test_images = test_images.reshape(test_images.shape[0],28,28,1)
+
+#train_labels = keras.utils.to_categorical(train_labels,10)
+#test_labels = keras.utils.to_categorical(test_labels,10)
+
+print('Loaded {} images with shape: {}'.format(train_images.shape[0],train_images.shape[1:]))
+
+rn = res_net(input_shape_lin=(28,28,1),kernel_size_lin=(3,3),pool_size=(2,2),
+             output_classes=10,
+             input_shape_mel=None,
+             layer_stack_count=2,convolution_stack_size=2,
+             use_residuals=False,
+             checkpoint_dir='./data/checkpoints')
+rn.plot_model('model_test_.png')
+
+for image,label in zip(train_images[:2000,:],train_labels[:2000]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.train(expanded_image,expanded_label)
+
+for image,label in zip(test_images[:2000,:],test_labels[:2000]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test(expanded_image,expanded_label)
+
+rn.report()
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)
