@@ -19,6 +19,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
+import csv
 
 from tensorflow.keras.models import Model
 
@@ -34,9 +35,9 @@ from tensorflow.keras.layers import Concatenate
 from tensorflow.keras.layers import Add
 from tensorflow.keras.layers import AveragePooling2D
 
-'''Reinforcement learning? Subtract at most 6 instrument, the remaining sound is the 
-reward function
-'''
+
+import matplotlib.pyplot as plt
+
 
 class res_net:
     def __init__(self,checkpoint_dir=None,checkpoint_frequency=1000,
@@ -47,7 +48,8 @@ class res_net:
                  pool_size = (2,5),
                  convolution_stack_size = 3,
                  layer_stack_count = 4,
-                 use_residuals = True):
+                 use_residuals = True,
+                 metrics = ['acc']):
         '''Residual net
         params:    
             checkpoint_dir: The directory to save checkpoints to. If set to none,
@@ -141,10 +143,18 @@ class res_net:
         
         self.model = model
         
+        def y_pred_log(y_true, y_pred):
+            return keras.backend.argmax(y_pred)
+        def y_true_log (y_true, y_pred): 
+            return y_true
+#        
+        metrics.append(y_pred_log)
+        metrics.append(y_true_log)
+        
         self.model.compile(
               keras.optimizers.SGD(lr=0.01),
               loss='sparse_categorical_crossentropy',
-              metrics=['accuracy'])
+              metrics=metrics)
         
         if weights_checkpoint_filename is not None:
             print('Loading Weights...')
@@ -189,11 +199,19 @@ class res_net:
         
         if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
             print('Saving checkpoint {}'.format(self.current_batch))
+            progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
+            avgs = np.average(self.metrics_train[
+                            self.current_batch-self.checkpoint_frequency:
+                            self.current_batch],axis=0)
+            for idx,metric_name in enumerate(self.model.metrics_names[:-2]):
+                progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
+            print(progress_str)
             self.model.save_weights(
                     os.path.join(self.checkpoint_dir,
                                  'checkpoint_{}.h5'.format(self.current_batch))
                     )
         self.current_batch += 1
+        
     
     def test(self,x,y):
         """Wrapper for test_on_batch. Sample weights constant"""
@@ -205,18 +223,70 @@ class res_net:
         """Calculates the output for input x"""
         return self.model.predict_on_batch(x)
         
-    def report(self, filename=None):
+
+    def report(self, training=False, test = True,
+               filename_training=None, filename_test = None):
+        """Prints the training and test report """
+
+
+        def save_report(fn,rep):
+             with open(fn, 'w', newline='') as csvfile:
+                fieldnames = [''] +list(rep[list(rep.keys())[0]].keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+                writer.writeheader()
+                for key, value in rep.items():
+                    d = {'':key}
+                    d = {**d,**value}
+                    writer.writerow(d)
+                
+        if training:
+            print('\nTraining Results:  ')
+            true = [r[3] for r in self.metrics_train]
+            pred = [r[2] for r in self.metrics_train]
+            print(classification_report(true,pred))
+            if filename_training:
+                save_report(filename_training,
+                            classification_report(true,pred,output_dict = True))
+            
+        if test:
+            print('\nTest Results:  ')
+            true = [r[3] for r in self.metrics_test]
+            pred = [r[2] for r in self.metrics_test]
+            print(classification_report(true,pred))
+            if filename_test:
+                save_report(filename_test,
+                            classification_report(true,pred,output_dict = True))
+            
+        
+        
+    def plot(self,metrics_to_plot=[0,1],moving_average_window=10,
+             filename_training=None, filename_test=None):
         """Prints the classification report for both training and test, if available.
         If the filename is specifies, the report(s) is/are saved to a csv file"""
-        if self.metrics_train:
-            print(classification_report(self.train, self.preds.argmax(axis=1),
-                                target_names=self.class_names))
-        if self.metrics_test:
-            print(classification_report(self.test_labels, self.preds.argmax(axis=1),
-                                target_names=self.class_names))
-        #model.metrics_names
-        if filename:
-            raise NotImplementedError('Yet')
+        
+        def moving_average(x):
+            return np.convolve(x, np.ones(moving_average_window), 'valid') / moving_average_window
+
+        titles = ['test','training']
+        for metric in [self.metrics_train,self.metrics_test]:
+            N = len(metrics_to_plot)
+            plt.figure(figsize=(9, 4*N))
+            title = titles.pop()#Kinky, I know
+            if metric:
+                for i,m in enumerate(metrics_to_plot):
+                    plt.subplot(N,1,i+1)
+                    plt.plot(moving_average([met[m] for met in metric]))
+                    plt.xlabel('Batch')
+                    plt.title(self.model.metrics_names[m] + ' - ' + title)
+                
+                plt.tight_layout()        
+                if title == 'training' and filename_training:
+                    plt.savefig(filename_training, dpi=300)
+                if title == 'test' and filename_test:
+                    plt.savefig(filename_test, dpi=300)
+            
+            
         
     def load_weights(self,filename):
         self.model.load_weights(filename)

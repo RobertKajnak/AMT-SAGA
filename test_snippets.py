@@ -20,10 +20,11 @@ import librosa.display
 import soundfile
 import scipy
 
-import fluidsynth
+#import fluidsynth
 
 import tensorflow.keras as keras
 from RDCNN import res_net
+import ProgressBar as PB
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 #%% Predef functions
@@ -506,6 +507,7 @@ test_images = test_images.reshape(test_images.shape[0],28,28,1)
 
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
+#from RDCNN import res_net
 
 print('Loaded {} images with shape: {}'.format(train_images.shape[0],train_images.shape[1:]))
 
@@ -517,17 +519,25 @@ rn = res_net(input_shape_lin=(28,28,1),kernel_size_lin=(3,3),pool_size=(2,2),
              checkpoint_dir='./data/checkpoints')
 rn.plot_model('model_test_.png')
 
-for image,label in zip(train_images[:2000,:],train_labels[:2000]):
+pb = PB.ProgressBar(train_images.shape[0])
+for image,label in zip(train_images,train_labels):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
     rn.train(expanded_image,expanded_label)
-
-for image,label in zip(test_images[:2000,:],test_labels[:2000]):
+    pb.check_progress()
+    
+pb = PB.ProgressBar(test_images.shape[0])
+for image,label in zip(test_images,test_labels):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
     rn.test(expanded_image,expanded_label)
+    pb.check_progress()
 
-rn.report()
+rn.report(training=True, filename_training='./data/results/training.csv',
+                          filename_test = './data/results/test.csv')
+rn.plot(metrics_to_plot=[0,1],moving_average_window=5,
+             filename_training='./data/results/training.png', 
+             filename_test='./data/results/test.png')
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)
