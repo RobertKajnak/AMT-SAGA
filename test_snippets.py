@@ -25,6 +25,7 @@ import scipy
 import tensorflow.keras as keras
 from RDCNN import res_net
 import ProgressBar as PB
+import os
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 #%% Predef functions
@@ -495,9 +496,16 @@ ac_sub.save(path + 'wave_test_sub.flac',)
 
 
 #%% RNN test
+res_dir = './results_mnist'
+suffix = '_2_4_no_normal'
+
 fashion_mnist = keras.datasets.fashion_mnist
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
+               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
 
 (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+print('Loaded {} images with shape: {}'.format(train_images.shape[0],train_images.shape[1:]))
+print('Suffix used: ' + suffix)
 
 train_images = train_images / 255.0
 test_images = test_images / 255.0
@@ -507,17 +515,14 @@ test_images = test_images.reshape(test_images.shape[0],28,28,1)
 
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
-#from RDCNN import res_net
-
-print('Loaded {} images with shape: {}'.format(train_images.shape[0],train_images.shape[1:]))
 
 rn = res_net(input_shape_lin=(28,28,1),kernel_size_lin=(3,3),pool_size=(2,2),
              output_classes=10,
              input_shape_mel=None,
-             layer_stack_count=2,convolution_stack_size=2,
+             layer_stack_count=2,convolution_stack_size=5,
              use_residuals=False,
-             checkpoint_dir='./data/checkpoints')
-rn.plot_model('model_test_.png')
+             checkpoint_dir= './data/checkpoints', verbose = False)
+rn.plot_model(os.path.join(res_dir,'model_test' + suffix + '.png'))
 
 pb = PB.ProgressBar(train_images.shape[0])
 for image,label in zip(train_images,train_labels):
@@ -533,11 +538,12 @@ for image,label in zip(test_images,test_labels):
     rn.test(expanded_image,expanded_label)
     pb.check_progress()
 
-rn.report(training=True, filename_training='./data/results/training.csv',
-                          filename_test = './data/results/test.csv')
+rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'), 
+                          filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
+                          class_names = class_names)
 rn.plot(metrics_to_plot=[0,1],moving_average_window=5,
-             filename_training='./data/results/training.png', 
-             filename_test='./data/results/test.png')
+             filename_training=os.path.join(res_dir,'training' + suffix + '.png'), 
+             filename_test=os.path.join(res_dir,'test' + suffix + '.png'))
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)

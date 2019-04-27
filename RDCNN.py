@@ -36,12 +36,11 @@ from tensorflow.keras.layers import Add
 from tensorflow.keras.layers import AveragePooling2D
 
 
-import matplotlib.pyplot as plt
-
 
 class res_net:
-    def __init__(self,checkpoint_dir=None,checkpoint_frequency=1000,
+    def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=1000,
                  weights_checkpoint_filename=None,starting_checkpoint_index=1,
+                 verbose = True,
                  input_shape_lin = (20,2049,1,), input_shape_mel = (20,256,1,),
                  output_classes = 128,
                  kernel_size_lin = (3,32),       kernel_size_mel = (3,8),
@@ -54,6 +53,8 @@ class res_net:
         params:    
             checkpoint_dir: The directory to save checkpoints to. If set to none,
                 no operation will be performed
+            checkpoint_prefix: The filename for checkpoints. E.g. a prefix ='foo' will
+                yield filenames of 'foo_1000.h5', 'foo_2000.h5' etc.
             checkpoint_frequency: the model weights will be saved every nth batch
             weights_checkpoint_filename: weights will be attempted to be imported from this file
             starting_checkpoint_index: specify this to continue couning from a previous point
@@ -65,11 +66,11 @@ class res_net:
             use_residuals: creates residual layers over convolutional stacks
         '''
 
-        print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
+        self.verbose = verbose
+        if verbose:
+            print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
         
-        self.class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
-               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
-        
+
             
         #44100 with 4098 buckets, leads to 44.93 samples/sec -> crop or extend to .5 sec
         #=> 20 wide, 2049 high
@@ -157,10 +158,12 @@ class res_net:
               metrics=metrics)
         
         if weights_checkpoint_filename is not None:
-            print('Loading Weights...')
+            if verbose:
+                print('Loading Weights...')
             self.load_weights(weights_checkpoint_filename)
             
         self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_prefix = checkpoint_prefix
         self.checkpoint_frequency = checkpoint_frequency
         if checkpoint_frequency<1:
             self.checkpoint_dir = None
@@ -198,17 +201,19 @@ class res_net:
                 )
         
         if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
-            print('Saving checkpoint {}'.format(self.current_batch))
-            progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
-            avgs = np.average(self.metrics_train[
-                            self.current_batch-self.checkpoint_frequency:
-                            self.current_batch],axis=0)
-            for idx,metric_name in enumerate(self.model.metrics_names[:-2]):
-                progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
-            print(progress_str)
+            if self.verbose:
+                print('Saving checkpoint {}'.format(self.current_batch))
+                progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
+                avgs = np.average(self.metrics_train[
+                                self.current_batch-self.checkpoint_frequency:
+                                self.current_batch],axis=0)
+                for idx,metric_name in enumerate(self.model.metrics_names[:-2]):
+                    progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
+                print(progress_str)
+                
             self.model.save_weights(
                     os.path.join(self.checkpoint_dir,
-                                 'checkpoint_{}.h5'.format(self.current_batch))
+                                 self.checkpoint_prefix + '_{}.h5'.format(self.current_batch))
                     )
         self.current_batch += 1
         
@@ -224,7 +229,8 @@ class res_net:
         return self.model.predict_on_batch(x)
         
 
-    def report(self, training=False, test = True,
+    def report(self, class_names = None,
+               training=False, test = True,
                filename_training=None, filename_test = None):
         """Prints the training and test report """
 
@@ -247,7 +253,8 @@ class res_net:
             print(classification_report(true,pred))
             if filename_training:
                 save_report(filename_training,
-                            classification_report(true,pred,output_dict = True))
+                            classification_report(true,pred,output_dict = True,
+                                                  target_names = class_names))
             
         if test:
             print('\nTest Results:  ')
@@ -256,7 +263,8 @@ class res_net:
             print(classification_report(true,pred))
             if filename_test:
                 save_report(filename_test,
-                            classification_report(true,pred,output_dict = True))
+                            classification_report(true,pred,output_dict = True,
+                                                  target_names = class_names))
             
         
         
