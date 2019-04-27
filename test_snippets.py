@@ -497,7 +497,16 @@ ac_sub.save(path + 'wave_test_sub.flac',)
 
 #%% RNN test
 res_dir = './results_mnist'
-suffix = '_2_4_no_normal'
+convolutional_layer_count = 15
+pool_layer_frequency = 8
+feature_expand_frequency = pool_layer_frequency
+residual_layer_frequency = None
+
+#TO test: -residuals -dualchannel -two_fc_at_the_end
+
+suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
+                '_' + str(residual_layer_frequency) + \
+                ''
 
 fashion_mnist = keras.datasets.fashion_mnist
 class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
@@ -519,10 +528,12 @@ test_images = test_images.reshape(test_images.shape[0],28,28,1)
 rn = res_net(input_shape_lin=(28,28,1),kernel_size_lin=(3,3),pool_size=(2,2),
              output_classes=10,
              input_shape_mel=None,
-             layer_stack_count=2,convolution_stack_size=5,
-             use_residuals=False,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=pool_layer_frequency,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequency=residual_layer_frequency,
              checkpoint_dir= './data/checkpoints', verbose = False)
-rn.plot_model(os.path.join(res_dir,'model_test' + suffix + '.png'))
+rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 pb = PB.ProgressBar(train_images.shape[0])
 for image,label in zip(train_images,train_labels):
@@ -541,7 +552,7 @@ for image,label in zip(test_images,test_labels):
 rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'), 
                           filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
-rn.plot(metrics_to_plot=[0,1],moving_average_window=5,
+rn.plot(metrics_to_plot=[0,1],moving_average_window=100,
              filename_training=os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test=os.path.join(res_dir,'test' + suffix + '.png'))
 #%% File save test

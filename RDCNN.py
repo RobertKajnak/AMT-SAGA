@@ -45,9 +45,10 @@ class res_net:
                  output_classes = 128,
                  kernel_size_lin = (3,32),       kernel_size_mel = (3,8),
                  pool_size = (2,5),
-                 convolution_stack_size = 3,
-                 layer_stack_count = 4,
-                 use_residuals = True,
+                 convolutional_layer_count = 15,
+                 feature_expand_frequency = 6,
+                 pool_layer_frequency = 6,
+                 residual_layer_frequency = 2,
                  metrics = ['acc']):
         '''Residual net
         params:    
@@ -82,7 +83,7 @@ class res_net:
         
         #a width  of 3 would be equal to 60ms which is in line with the minimum dration
         #for instrument recognition on trickier instruments for humans
-        chanDim=-1
+        
         
         #2 channels since hearing and related components are logarithmic, 
         # but instrument physics are linear 
@@ -95,17 +96,22 @@ class res_net:
         if input_shape_lin:
             in_lin = Input(shape=input_shape_lin,batch_size=1)
             p1 = in_lin
-            base_f = 32
+            feature_out = 32
+            p0 = p1
             
-            for i in range(layer_stack_count):
-                p0 = p1
-                for j in range(convolution_stack_size):
-                    p1 = Conv2D(base_f*(i+1), kernel_size_lin, padding="same",activation='relu')(p1)
-                    p1 = BatchNormalization(axis=chanDim)(p1)
-                if use_residuals:
+            for i in range(1,convolutional_layer_count+1):
+                p1 = Conv2D(feature_out, kernel_size_lin, padding="same")(p1)
+                p1 = BatchNormalization()(p1)
+                p1 = Activation('sigmoid')(p1)
+                if residual_layer_frequency and i%residual_layer_frequency == 0:
                     p1 = self._add_shortcut(p0,p1)
-                p1 = MaxPooling2D(pool_size=pool_size)(p1)
-                p1 = Dropout(0.25)(p1)
+                    p1 = BatchNormalization()(p1)
+                    p0 = p1
+                if pool_layer_frequency and i%pool_layer_frequency==0:
+                    p1 = MaxPooling2D(pool_size=pool_size)(p1)
+                    p1 = Dropout(0.25)(p1)
+                if feature_expand_frequency and i%feature_expand_frequency==0:
+                    feature_out *= 2
             p1 = Flatten()(p1)
         
 
@@ -118,7 +124,7 @@ class res_net:
                 p0 = p2
                 for j in range(convolution_stack_size):
                     p2 = Conv2D(base_f*(i+1), kernel_size_mel, padding="same",activation='relu')(p2)
-                    p2 = BatchNormalization(axis=chanDim)(p2)
+                    p2 = BatchNormalization()(p2)
                 if use_residuals:
                     p2 = self._add_shortcut(p0,p2)
                 p2 = MaxPooling2D(pool_size=pool_size)(p2)
@@ -133,6 +139,7 @@ class res_net:
             cted = p1 if input_shape_lin else p2
             
         m = Dense(output_classes)(cted)
+        
         out1 = Activation("softmax")(m)
         
         if input_shape_lin and input_shape_mel: 
@@ -188,6 +195,7 @@ class res_net:
             if sh1[:2] != sh2[:2]:
                 intermediate = AveragePooling2D(_strides)(intermediate)
             
+            intermediate = BatchNormalization()(intermediate)
             return Add()([intermediate,layer_to])
             
     
@@ -272,9 +280,20 @@ class res_net:
              filename_training=None, filename_test=None):
         """Prints the classification report for both training and test, if available.
         If the filename is specifies, the report(s) is/are saved to a csv file"""
-        
-        def moving_average(x):
-            return np.convolve(x, np.ones(moving_average_window), 'valid') / moving_average_window
+
+        def moving_average(x):        
+            r_list = []
+            ma_sum = np.average(x[:moving_average_window])
+            for i in range(moving_average_window):
+                #ma_sum += x[i]
+                #r_list.append(ma_sum/(i+1))
+                r_list.append(ma_sum)
+            ma_sum *= moving_average_window
+            for i in range(moving_average_window,len(x)):
+                ma_last = x[i-moving_average_window]
+                ma_sum = ma_sum - ma_last+x[i]
+                r_list.append(ma_sum/moving_average_window)
+            return r_list
 
         titles = ['test','training']
         for metric in [self.metrics_train,self.metrics_test]:
@@ -284,7 +303,9 @@ class res_net:
             if metric:
                 for i,m in enumerate(metrics_to_plot):
                     plt.subplot(N,1,i+1)
-                    plt.plot(moving_average([met[m] for met in metric]))
+                    ma = moving_average([met[m] for met in metric])
+                    ma = moving_average(ma)
+                    plt.plot(ma)
                     plt.xlabel('Batch')
                     plt.title(self.model.metrics_names[m] + ' - ' + title)
                 
