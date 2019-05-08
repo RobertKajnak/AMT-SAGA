@@ -41,10 +41,10 @@ class res_net:
     def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=1000,
                  weights_checkpoint_filename=None,starting_checkpoint_index=1,
                  verbose = True,
-                 input_shape_lin = (20,2049,1,), input_shape_mel = None,#(20,256,1,),
+                 input_shapes = [(20,2049,1,),(20,256,1,)],
                  output_classes = 128,
-                 kernel_size_lin = (3,32),       kernel_size_mel = None,#(3,8),
-                 pool_size = (2,5),
+                 kernel_sizes = [(3,32),(3,8)],
+                 pool_sizes = [(2,5),(2,5)],
                  convolutional_layer_count = 15,
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
@@ -93,14 +93,17 @@ class res_net:
         # Estefan´ıa Cano, Mark Plumbley, Christian Dittmar, phase infomration 
         #could aslo be used
         
-        if input_shape_lin:
-            in_lin = Input(shape=input_shape_lin,batch_size=1)
-            p1 = in_lin
+        input_layers = []
+        layers = []
+        for iidx, input_shape in enumerate(input_shapes):
+            in_lay = Input(shape=input_shape,batch_size=1)
+            input_layers.append(in_lay)
+            p1 = in_lay
             feature_out = 32
             p0 = p1
             
             for i in range(1,convolutional_layer_count+1):
-                p1 = Conv2D(feature_out, kernel_size_lin, padding="same")(p1)
+                p1 = Conv2D(feature_out, kernel_sizes[iidx], padding="same")(p1)
                 p1 = BatchNormalization()(p1)
                 p1 = Activation('sigmoid')(p1)
                 if residual_layer_frequency and i%residual_layer_frequency == 0:
@@ -108,44 +111,21 @@ class res_net:
                     p1 = BatchNormalization()(p1)
                     p0 = p1
                 if pool_layer_frequency and i%pool_layer_frequency==0:
-                    p1 = MaxPooling2D(pool_size=pool_size)(p1)
+                    p1 = MaxPooling2D(pool_size=pool_sizes[iidx])(p1)
                     #p1 = Dropout(0.25)(p1)
                 if feature_expand_frequency and i%feature_expand_frequency==0:
                     feature_out *= 2
             
             p1 = BatchNormalization()(p1)
             p1 = Flatten()(p1)
-        
-
-        if input_shape_mel:
-            in_mel = Input(shape=input_shape_mel,batch_size=1)
-            p2=  in_mel
-            feature_out = 32
-            p0 = p2
-                            
-            for i in range(1,convolutional_layer_count+1):
-                p2 = Conv2D(feature_out, kernel_size_mel, padding="same")(p2)
-                p2 = BatchNormalization()(p2)
-                p2 = Activation('sigmoid')(p2)
-                if residual_layer_frequency and i%residual_layer_frequency == 0:
-                    p2 = self._add_shortcut(p0,p2)
-                    p2 = BatchNormalization()(p2)
-                    p0 = p2
-                if pool_layer_frequency and i%pool_layer_frequency==0:
-                    p2 = MaxPooling2D(pool_size=pool_size)(p2)
-                    #p2 = Dropout(0.25)(p2)
-                if feature_expand_frequency and i%feature_expand_frequency==0:
-                    feature_out *= 2    
-                
-            p2 = BatchNormalization()(p2)
-            p2 = Flatten()(p2)
+            layers.append(p1)
         
         
         #p22 = Flatten()(p22)
-        if input_shape_lin and input_shape_mel:
-            cted = Concatenate()([p1,p2])
+        if len(input_shapes)>1:
+            cted = Concatenate()(layers)
         else:
-            cted = p1 if input_shape_lin else p2
+            cted = layers[0]
             
         
         m = Dense(300)(cted)
@@ -154,12 +134,8 @@ class res_net:
         
         out1 = Activation("softmax")(m)
         
-        if input_shape_lin and input_shape_mel: 
-            model = Model(inputs = [in_lin,in_mel],outputs = out1)
-        else:
-            in_single = in_lin if input_shape_lin else in_mel
-            model = Model(inputs = [in_single],outputs = out1)
-
+        model = Model(inputs = input_layers,outputs = out1)
+        
         
         self.model = model
         

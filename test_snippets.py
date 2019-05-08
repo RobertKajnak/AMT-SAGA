@@ -506,7 +506,7 @@ residual_layer_frequency = None
 
 suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
          '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequency) + \
-                '_dense_activation_3'
+                '_3_inputs'
 
 fashion_mnist = keras.datasets.fashion_mnist
 class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
@@ -525,8 +525,7 @@ test_images = test_images.reshape(test_images.shape[0],28,28,1)
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
 
-rn = res_net(input_shape_lin=(28,28,1),kernel_size_lin=(3,3),pool_size=(2,2),
-             input_shape_mel=(28,28,1),kernel_size_mel=(3,3),
+rn = res_net(input_shapes=[(28,28,1)]*3,kernel_sizes=[(3,3)]*3,pool_sizes=[(2,2)]*3,
              output_classes=10,
              convolutional_layer_count=convolutional_layer_count,
              pool_layer_frequency=pool_layer_frequency,
@@ -539,7 +538,7 @@ pb = PB.ProgressBar(10000,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:10000,:],train_labels[:10000]):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
-    rn.train(expanded_image,expanded_label)
+    rn.train([expanded_image]*3,expanded_label)
     pb.check_progress()
 #    
 #pb = PB.ProgressBar(test_images.shape[0])
