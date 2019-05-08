@@ -41,9 +41,9 @@ class res_net:
     def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=1000,
                  weights_checkpoint_filename=None,starting_checkpoint_index=1,
                  verbose = True,
-                 input_shape_lin = (20,2049,1,), input_shape_mel = (20,256,1,),
+                 input_shape_lin = (20,2049,1,), input_shape_mel = None,#(20,256,1,),
                  output_classes = 128,
-                 kernel_size_lin = (3,32),       kernel_size_mel = (3,8),
+                 kernel_size_lin = (3,32),       kernel_size_mel = None,#(3,8),
                  pool_size = (2,5),
                  convolutional_layer_count = 15,
                  feature_expand_frequency = 6,
@@ -109,26 +109,35 @@ class res_net:
                     p0 = p1
                 if pool_layer_frequency and i%pool_layer_frequency==0:
                     p1 = MaxPooling2D(pool_size=pool_size)(p1)
-                    p1 = Dropout(0.25)(p1)
+                    #p1 = Dropout(0.25)(p1)
                 if feature_expand_frequency and i%feature_expand_frequency==0:
                     feature_out *= 2
+            
+            p1 = BatchNormalization()(p1)
             p1 = Flatten()(p1)
         
 
         if input_shape_mel:
             in_mel = Input(shape=input_shape_mel,batch_size=1)
             p2=  in_mel
-            base_f = 32
-            
-            for i in range(layer_stack_count):
-                p0 = p2
-                for j in range(convolution_stack_size):
-                    p2 = Conv2D(base_f*(i+1), kernel_size_mel, padding="same",activation='relu')(p2)
-                    p2 = BatchNormalization()(p2)
-                if use_residuals:
+            feature_out = 32
+            p0 = p2
+                            
+            for i in range(1,convolutional_layer_count+1):
+                p2 = Conv2D(feature_out, kernel_size_mel, padding="same")(p2)
+                p2 = BatchNormalization()(p2)
+                p2 = Activation('sigmoid')(p2)
+                if residual_layer_frequency and i%residual_layer_frequency == 0:
                     p2 = self._add_shortcut(p0,p2)
-                p2 = MaxPooling2D(pool_size=pool_size)(p2)
-                p2 = Dropout(0.25)(p2)
+                    p2 = BatchNormalization()(p2)
+                    p0 = p2
+                if pool_layer_frequency and i%pool_layer_frequency==0:
+                    p2 = MaxPooling2D(pool_size=pool_size)(p2)
+                    #p2 = Dropout(0.25)(p2)
+                if feature_expand_frequency and i%feature_expand_frequency==0:
+                    feature_out *= 2    
+                
+            p2 = BatchNormalization()(p2)
             p2 = Flatten()(p2)
         
         
@@ -138,7 +147,10 @@ class res_net:
         else:
             cted = p1 if input_shape_lin else p2
             
-        m = Dense(output_classes)(cted)
+        
+        m = Dense(300)(cted)
+        m = Activation('sigmoid')(m)
+        m = Dense(output_classes)(m)
         
         out1 = Activation("softmax")(m)
         
