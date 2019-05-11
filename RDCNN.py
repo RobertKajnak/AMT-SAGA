@@ -26,7 +26,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Dropout
+#from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import BatchNormalization
 from tensorflow.keras.layers import Conv2D
@@ -38,7 +38,7 @@ from tensorflow.keras.layers import AveragePooling2D
 
 
 class res_net:
-    def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=1000,
+    def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=5000,
                  weights_checkpoint_filename=None,starting_checkpoint_index=1,
                  verbose = True,
                  input_shapes = [(20,2049,1,),(20,256,1,)],
@@ -48,7 +48,7 @@ class res_net:
                  convolutional_layer_count = 15,
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
-                 residual_layer_frequency = 2,
+                 residual_layer_frequencies = 2,
                  metrics = ['acc']):
         '''Residual net
         params:    
@@ -71,7 +71,16 @@ class res_net:
         if verbose:
             print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
         
-
+        if residual_layer_frequencies is None:
+            residual_layer_frequencies = []
+        else:
+            try:
+                len(residual_layer_frequencies)
+            except TypeError:
+                if residual_layer_frequencies<1:
+                    residual_layer_frequencies = []
+                else:
+                    residual_layer_frequencies = [residual_layer_frequencies]
             
         #44100 with 4098 buckets, leads to 44.93 samples/sec -> crop or extend to .5 sec
         #=> 20 wide, 2049 high
@@ -100,23 +109,24 @@ class res_net:
             input_layers.append(in_lay)
             p1 = in_lay
             feature_out = 32
-            p0 = p1
+            p0 = [p1]*len(residual_layer_frequencies)
             
             for i in range(1,convolutional_layer_count+1):
                 p1 = Conv2D(feature_out, kernel_sizes[iidx], padding="same")(p1)
                 p1 = BatchNormalization()(p1)
                 p1 = Activation('sigmoid')(p1)
-                if residual_layer_frequency and i%residual_layer_frequency == 0:
-                    p1 = self._add_shortcut(p0,p1)
-                    p1 = BatchNormalization()(p1)
-                    p0 = p1
+                for ri in range(len(residual_layer_frequencies)):
+                    if i%residual_layer_frequencies[ri] == 0:
+                        p1 = self._add_shortcut(p0[ri],p1)
+                        p1 = BatchNormalization()(p1)
+                        p0[ri] = p1
                 if pool_layer_frequency and i%pool_layer_frequency==0:
                     p1 = MaxPooling2D(pool_size=pool_sizes[iidx])(p1)
                     #p1 = Dropout(0.25)(p1)
                 if feature_expand_frequency and i%feature_expand_frequency==0:
                     feature_out *= 2
             
-            p1 = BatchNormalization()(p1)
+            p1 = BatchNormalization()(p1) #TODO: Only do if the previous one isn't normalization
             p1 = Flatten()(p1)
             layers.append(p1)
         

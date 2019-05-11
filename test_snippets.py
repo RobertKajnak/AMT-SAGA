@@ -497,16 +497,19 @@ ac_sub.save(path + 'wave_test_sub.flac',)
 
 #%% RNN test
 res_dir = './results_mnist'
-convolutional_layer_count = 8
-pool_layer_frequency = 3
-feature_expand_frequency = 3#pool_layer_frequency
-residual_layer_frequency = None
+convolutional_layer_count = 17
+pool_layer_frequency = 6
+feature_expand_frequency = 6#pool_layer_frequency
+residual_layer_frequencies = [2,4,8,16]
 
-#TO test: -residuals -dualchannel -two_fc_at_the_end
+#for convolutional_layer_count,pool_layer_frequency,feature_expand_frequency, \
+#    residual_layer_frequency in zip([16,32,32],[6,12,32],[6,12,32],[2,None,2]):
+    
+    #TO test: -residuals -dualchannel -two_fc_at_the_end
 
 suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
-         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequency) + \
-                '_3_inputs'
+         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
+                '_mutiple_residuals'
 
 fashion_mnist = keras.datasets.fashion_mnist
 class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
@@ -525,35 +528,38 @@ test_images = test_images.reshape(test_images.shape[0],28,28,1)
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
 
-rn = res_net(input_shapes=[(28,28,1)]*3,kernel_sizes=[(3,3)]*3,pool_sizes=[(2,2)]*3,
+rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              output_classes=10,
              convolutional_layer_count=convolutional_layer_count,
              pool_layer_frequency=pool_layer_frequency,
              feature_expand_frequency = feature_expand_frequency,
-             residual_layer_frequency=residual_layer_frequency,
-             checkpoint_dir= './data/checkpoints', verbose = False)
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_prefix = 'checpoint_' + suffix,
+             verbose = False)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-pb = PB.ProgressBar(10000,sound='beep')#(train_images.shape[0])
-for image,label in zip(train_images[:10000,:],train_labels[:10000]):
+test_set_size = 60000
+pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
+for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
-    rn.train([expanded_image]*3,expanded_label)
+    rn.train([expanded_image],expanded_label)
     pb.check_progress()
-#    
-#pb = PB.ProgressBar(test_images.shape[0])
-#for image,label in zip(test_images,test_labels):
-#    expanded_image = np.expand_dims(image,axis=0)
-#    expanded_label = np.expand_dims(label,axis=0)
-#    rn.test(expanded_image,expanded_label)
-#    pb.check_progress()
+    
+pb = PB.ProgressBar(test_images.shape[0])
+for image,label in zip(test_images,test_labels):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test([expanded_image],expanded_label)
+    pb.check_progress()
 
 rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
-          test = False, #filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
+          test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
-             filename_training=os.path.join(res_dir,'training' + suffix + '.png'), 
-             filename_test = None )#=os.path.join(res_dir,'test' + suffix + '.png'))
+             filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
+             filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
 #    y_background = librosa.istft(D_percussive)
