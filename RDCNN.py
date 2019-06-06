@@ -43,6 +43,7 @@ class res_net:
                  verbose = True,
                  input_shapes = [(20,2049,1,),(20,256,1,)],
                  output_classes = 128,
+                 output_range=[0,128],
                  kernel_sizes = [(3,32),(3,8)],
                  pool_sizes = [(2,5),(2,5)],
                  convolutional_layer_count = 15,
@@ -59,14 +60,36 @@ class res_net:
             checkpoint_frequency: the model weights will be saved every nth batch
             weights_checkpoint_filename: weights will be attempted to be imported from this file
             starting_checkpoint_index: specify this to continue couning from a previous point
-            input_shape_lin and input_shape_mel: the input layer shapes for linear and mel spacing
-                set either to None to use a single channel
-            pool_size: pooling size
-            convolution_stack_size: the number of convolutional laers next to each others
-            layer_stack_count: how many times the convolution_stack_size structure is repeated
-            use_residuals: creates residual layers over convolutional stacks
-        '''
 
+            input_shapes: the input shape of the separate input channels. The default value uses two channels.
+                For a single channel use [(n,m,1)]
+            output_classes: the number of output classes. specifying a value of 1 will change the network to use a
+                single output with sigmoid/MSE loss instead of softmax/cross entropy
+            output_range: if the output classes are classified as 1, this is used
+                to scale the output from this domain to to the appropriate values
+
+            pool_size: pooling sizes, in the same order as the input channles.
+                If a single channel is present use [(n,m)]
+            kernel_sizes: kernel sizes in the same order as the input channles.
+                If a single channel is present use [(n,m)]
+
+            convolutional_layer_count: total number of convolutional layers in the network, not counting size scaling
+                for the residual layers and similar layers
+            feature_expand_frequency: the frequency at which the number of features are doubled.
+                E.g. for convolutional_layer_count==5 and feature_expand_frequency==2 the feature sizes will be
+                32-32-64-64-128
+            pool_layer_frequency: the frequency at which the pooling layers are inserted.
+                Same logic as feature_expand_frequency. The pool layers are inserted BEFORE the feature expansion
+            residual_layer_frequencies: the frequency at which the the residual shortcuts are insterted.
+                Multiple frequencies can be specified e.g. [2,4] will insert a shortcut between every 2nd layer and
+                separately also between every 4th
+            metrics: the metrics to use. See Keras documentation
+        '''
+        activation_fuction = 'sigmoid'
+        self.out_func_min = 0
+        self.out_func_max = 1
+        self.out_func_factor = self.out_func_max - self.out_func_min
+        self.output_classes = output_classes
         self.verbose = verbose
         if verbose:
             print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
@@ -114,7 +137,7 @@ class res_net:
             for i in range(1,convolutional_layer_count+1):
                 p1 = Conv2D(feature_out, kernel_sizes[iidx], padding="same")(p1)
                 p1 = BatchNormalization()(p1)
-                p1 = Activation('sigmoid')(p1)
+                p1 = Activation(activation_fuction)(p1)
                 for ri in range(len(residual_layer_frequencies)):
                     if i%residual_layer_frequencies[ri] == 0:
                         p1 = self._add_shortcut(p0[ri],p1)
@@ -126,7 +149,7 @@ class res_net:
                 if feature_expand_frequency and i%feature_expand_frequency==0:
                     feature_out *= 2
             
-            p1 = BatchNormalization()(p1) #TODO: Only do if the previous one isn't normalization
+            #p1 = BatchNormalization()(p1) #TODO: Only do if the previous one isn't normalization
             p1 = Flatten()(p1)
             layers.append(p1)
         
@@ -139,28 +162,70 @@ class res_net:
             
         
         m = Dense(300)(cted)
-        m = Activation('sigmoid')(m)
+        m = Activation(activation_fuction)(m)
         m = Dense(output_classes)(m)
+
+
         
-        out1 = Activation("softmax")(m)
+        if output_classes>1:
+            out1 = Activation("softmax")(m)
+        elif output_classes==1:
+            out1 = Activation(activation_fuction)(m)
+            self.out_val_min = output_range[0]
+            self.out_val_max = output_range[1]
+            self.out_val_factor = output_range[1]-output_range[0]
+            if verbose:
+                print('Output scaling set to: [{},{}] -> [{},{}] ({})'.
+                      format(self.out_val_min,self.out_val_max,
+                             self.out_func_min,self.out_func_max,
+                             activation_fuction))
+        else:
+            raise ValueError('Invalid output size {}'.format(str(output_classes)))
         
         model = Model(inputs = input_layers,outputs = out1)
         
         
         self.model = model
-        
-        def y_pred_log(y_true, y_pred):
-            return keras.backend.argmax(y_pred)
-        def y_true_log (y_true, y_pred): 
-            return y_true
-#        
-        metrics.append(y_pred_log)
-        metrics.append(y_true_log)
-        
-        self.model.compile(
-              keras.optimizers.SGD(lr=0.01),
-              loss='sparse_categorical_crossentropy',
-              metrics=metrics)
+
+        custom_metrics = []
+        if output_classes>1:
+            def y_pred(y_true, y_pred):
+                return keras.backend.argmax(y_pred)           
+            def y_true (y_true, y_pred):
+                return y_true
+            custom_metrics = [y_pred,y_true]
+        else:
+            def mse(y_true, y_pred):
+                return (y_pred-y_true)**2
+            def mse_scaled(y_true, y_pred):
+                return (self._scale_activation_to_output(y_pred)
+                        - self._scale_activation_to_output(y_true))**2
+            def y_pred(y_true, y_pred):
+                return y_pred
+            def y_true(y_true, y_pred):
+                return y_true 
+            def y_pred_scaled(y_true, y_pred):
+                return self._scale_activation_to_output(y_pred)
+            def y_true_scaled(y_true, y_pred):
+                return self._scale_activation_to_output(y_true)
+            custom_metrics = [mse,mse_scaled,
+                              y_pred,y_true,
+                              y_pred_scaled,y_true_scaled]
+            
+        for m in custom_metrics:
+            metrics.append(m)
+
+        if output_classes>1:
+            self.model.compile(
+                  keras.optimizers.SGD(lr=0.01),
+                  loss='sparse_categorical_crossentropy',
+                  metrics=metrics)
+        else:
+            self.model.compile(
+                  keras.optimizers.SGD(lr=0.01),
+                  loss='mean_squared_error',
+                  metrics=metrics)
+
         
         if weights_checkpoint_filename is not None:
             if verbose:
@@ -178,6 +243,15 @@ class res_net:
         self.metrics_train = []
         self.metrics_test = []
         
+        
+    def _scale_output_to_activation(self,x):
+        return ((x - self.out_val_min)/self.out_val_factor)* \
+                self.out_func_factor + self.out_func_min
+    
+    def _scale_activation_to_output(self,x):
+        return ((x-self.out_func_min)/self.out_func_factor) * \
+                self.out_val_factor+self.out_val_min
+    
     def _add_shortcut(self,layer_from,layer_to):    
         sh1 = [np.int(layer_from.shape[1]),np.int(layer_from.shape[2]),np.int(layer_from.shape[3])]#layer_from.shape[1:]
         sh2 = [np.int(layer_to.shape[1]),np.int(layer_to.shape[2]),np.int(layer_to.shape[3])]
@@ -198,9 +272,16 @@ class res_net:
             
     
     def train(self,x,y):
-        """Wrapper for train_on_batch. Also creates checkpoints when needed.
-        Sample and class weights constant"""
+        """Wrapper for train_on_batch. 
+        Rescales output when specified in the constructor.
+        Creates checkpoints when needed.
+        Sample and class weights constant
+        """
         
+        if self.output_classes == 1:
+            y = self._scale_output_to_activation(y)
+        
+        #print(y)
         self.metrics_train.append(
                 self.model.train_on_batch(
                         x,y,sample_weight=None, class_weight=None)
@@ -226,51 +307,100 @@ class res_net:
     
     def test(self,x,y):
         """Wrapper for test_on_batch. Sample weights constant"""
+        if self.output_classes == 1:
+            y = self._scale_output_to_activation(y)
+        
+        #print(y)
         self.metrics_test.append(
                 self.model.test_on_batch(x, y, sample_weight=None)
                 )
         
     def predict(self,x):
         """Calculates the output for input x"""
-        return self.model.predict_on_batch(x)
-        
+        return self.__scale_activation_to_output(self.model.predict_on_batch(x))
+    
+    def _get_metric_ind(self,metric_string):
+        for ind,m_name in enumerate(self.model.metrics_names):
+            if metric_string==m_name:
+                break;
+        else:
+            return None
+        return ind
+    
+    def get_metric_training(self,metric):
+        """Returns an array containing the datapoints for the metric
+        params:
+            metric: can be either a string e.g. 'loss' or numerical e.g. 0 
+        """
+        if isinstance(metric, str):
+            ind = self._get_metric_ind(metric)
+        else:
+            ind = metric
+        if ind == None:
+            return None
+        else:
+            return np.array([val[ind] for val in self.metrics_training])
+            
+    def get_metric_test(self,metric):
+        """Returns an array containing the datapoints for the metric
+        params:
+            metric: can be either a string e.g. 'loss' or numerical e.g. 0 
+        """
+        if isinstance(metric, str):
+            ind = self._get_metric_ind(metric)
+        else:
+            ind = metric
+        if ind == None:
+            return None
+        else:
+            return np.array([val[ind] for val in self.metrics_test])
 
     def report(self, class_names = None,
                training=False, test = True,
                filename_training=None, filename_test = None):
-        """Prints the training and test report """
-
-
-        def save_report(fn,rep):
-             with open(fn, 'w', newline='') as csvfile:
-                fieldnames = [''] +list(rep[list(rep.keys())[0]].keys())
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            
-                writer.writeheader()
-                for key, value in rep.items():
-                    d = {'':key}
-                    d = {**d,**value}
-                    writer.writerow(d)
-                
-        if training:
-            print('\nTraining Results:  ')
-            true = [r[3] for r in self.metrics_train]
-            pred = [r[2] for r in self.metrics_train]
-            print(classification_report(true,pred))
-            if filename_training:
-                save_report(filename_training,
-                            classification_report(true,pred,output_dict = True,
-                                                  target_names = class_names))
-            
-        if test:
-            print('\nTest Results:  ')
-            true = [r[3] for r in self.metrics_test]
-            pred = [r[2] for r in self.metrics_test]
-            print(classification_report(true,pred))
+        """Prints the training and test report 
+        For single class networks, only the test is considered"""
+        
+        if self.output_classes==1:
+            mse_scaled = np.mean(self.get_metric_test('mse_scaled'))
+            mse_not_scaled = np.mean(self.get_metric_test('mse'))
+            print('MSE for test data: scaled {:.3f}, not scaled: {}'.
+                  format(mse_scaled,mse_not_scaled))
             if filename_test:
-                save_report(filename_test,
-                            classification_report(true,pred,output_dict = True,
-                                                  target_names = class_names))
+                f = open(filename_test, "w")
+                f.write(str(mse_scaled) + '\n' + str(mse_not_scaled))
+                f.close()
+        else:
+            def save_report(fn,rep):
+                 with open(fn, 'w', newline='') as csvfile:
+                    fieldnames = [''] +list(rep[list(rep.keys())[0]].keys())
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                    writer.writeheader()
+                    for key, value in rep.items():
+                        d = {'':key}
+                        d = {**d,**value}
+                        writer.writerow(d)
+                    
+            if training:
+                print('\nTraining Results:  ')
+                true = [r[3] for r in self.metrics_train]
+                pred = [r[2] for r in self.metrics_train]
+                print(classification_report(true,pred))
+                if filename_training:
+                    save_report(filename_training,
+                                classification_report(true,pred,output_dict = True,
+                                                      target_names = class_names))
+                
+            if test:
+                print('\nTest Results:  ')
+                true = [r[3] for r in self.metrics_test]
+                pred = [r[2] for r in self.metrics_test]
+                print(classification_report(true,pred))
+                if filename_test:
+                    save_report(filename_test,
+                                classification_report(true,pred,output_dict = True,
+                                                      target_names = class_names))
             
         
         
@@ -293,7 +423,7 @@ class res_net:
                 r_list.append(ma_sum/moving_average_window)
             return r_list
 
-        titles = ['test','training']
+        titles = ['test','training'] #It's backwards because .pop is used
         for metric in [self.metrics_train,self.metrics_test]:
             N = len(metrics_to_plot)
             plt.figure(figsize=(9, 4*N))
@@ -301,8 +431,11 @@ class res_net:
             if metric:
                 for i,m in enumerate(metrics_to_plot):
                     plt.subplot(N,1,i+1)
-                    ma = moving_average([met[m] for met in metric])
-                    ma = moving_average(ma)
+                    if moving_average_window>1:
+                        ma = moving_average([met[m] for met in metric])
+                        ma = moving_average(ma)
+                    else:
+                        ma = [met[m] for met in metric]
                     plt.plot(ma)
                     plt.xlabel('Batch')
                     plt.title(self.model.metrics_names[m] + ' - ' + title)

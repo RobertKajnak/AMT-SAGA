@@ -28,6 +28,8 @@ import ProgressBar as PB
 import os
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
+import pandas
+
 #%% Predef functions
 
 def add_note(sequence, instrument, program, pitch, start, end, velocity=127,  is_drum=False):
@@ -494,13 +496,21 @@ ac_guess.save(path + 'wave_test_guess.flac')
 ac.save(path + 'wave_test.flac')
 ac_sub.save(path + 'wave_test_sub.flac',)
 
+#%% File save test
+#    y_foreground = librosa.istft(D_harmonic)
+#    y_background = librosa.istft(D_percussive)
+#
+#    soundfile.write('C:/Code/Python/[Thesis]/Magenta/data/audio/librosa_voice.flac', y_foreground, sr, format='flac', subtype='PCM_24')
+#    soundfile.write(path + 'wave_test.flac', y_background, sr, format='flac', subtype='PCM_24')
+#    librosa.output.write_wav(path + 'sample.wav', sf.samples[0].raw_sample_data,sf.samples[0].sample_rate)
+
 
 #%% RNN test
 res_dir = './results_mnist'
-convolutional_layer_count = 17
+convolutional_layer_count = 16
 pool_layer_frequency = 6
 feature_expand_frequency = 6#pool_layer_frequency
-residual_layer_frequencies = [2,4,8,16]
+residual_layer_frequencies = [2]
 
 #for convolutional_layer_count,pool_layer_frequency,feature_expand_frequency, \
 #    residual_layer_frequency in zip([16,32,32],[6,12,32],[6,12,32],[2,None,2]):
@@ -509,7 +519,7 @@ residual_layer_frequencies = [2,4,8,16]
 
 suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
          '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
-                '_mutiple_residuals'
+                '_1_input_10k_samples'
 
 fashion_mnist = keras.datasets.fashion_mnist
 class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
@@ -535,11 +545,11 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
-             checkpoint_prefix = 'checpoint_' + suffix,
+             checkpoint_prefix = 'checkpoint_' + suffix,
              verbose = False)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-test_set_size = 60000
+test_set_size = 10000
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -557,26 +567,157 @@ for image,label in zip(test_images,test_labels):
 rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
           test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
+
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
-#%% File save test
-#    y_foreground = librosa.istft(D_harmonic)
-#    y_background = librosa.istft(D_percussive)
-#    
-#    soundfile.write('C:/Code/Python/[Thesis]/Magenta/data/audio/librosa_voice.flac', y_foreground, sr, format='flac', subtype='PCM_24')
-#    soundfile.write(path + 'wave_test.flac', y_background, sr, format='flac', subtype='PCM_24')
-#    librosa.output.write_wav(path + 'sample.wav', sf.samples[0].raw_sample_data,sf.samples[0].sample_rate)
+
+#%% RNN cont
+
+path_cont = './data/housing'
+fn_cont = 'housing.data'
+
+convolutional_layer_count = 0
+feature_expand_frequency = 0
+residual_layer_frequencies = 0
+
+suffix = 'housing_' + str(convolutional_layer_count) + \
+         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
+                '_mutiple_residuals'
 
 
+dataframe = pandas.read_csv(os.path.join(path_cont,fn_cont), delim_whitespace=True, header=None)
+dataset = dataframe.values
+np.random.shuffle(dataset)
+training_length = int(dataset.shape[0]*0.8)
+training_dataset = dataset[:training_length, :]
+test_dataset = dataset[training_length:, :]
+out_norm = np.max(dataframe.values[:,-1])
 
 
+rn = res_net(input_shapes=[(13,1,1)],kernel_sizes=[(1,1)],pool_sizes=[(0,0)],
+             output_classes=1,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=0,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_prefix = 'checkpoint_' + suffix,
+             metrics=['mean_squared_error'],
+             verbose = False)
 
+rn.plot_model(os.path.join(path_cont,'model_' + suffix + '.png'))
 
+epochs = 100
+pb = PB.ProgressBar(training_length*epochs)
+for i in range(epochs):
+    np.random.shuffle(training_dataset)
+    for x in training_dataset:
+        expanded_x = x[np.newaxis,:-1,np.newaxis,np.newaxis]
+        expanded_y = x[np.newaxis,-1]
+        rn.train(expanded_x, expanded_y)
+        pb.check_progress()
 
-
-
-
-
-
+pb = PB.ProgressBar(dataset.shape[0]-training_length)
+for x in test_dataset:
+    expanded_x = x[np.newaxis,:-1,np.newaxis,np.newaxis]
+    expanded_y = x[np.newaxis,-1]
+    rn.test([expanded_x], expanded_y)
+    pb.check_progress()
+  
     
+#rn.plot(metrics_to_plot=[0,1,2,3,4,5],moving_average_window=0,
+#             #filename_training = os.path.join(path_cont,'training' + suffix + '.png'),
+#             filename_test = os.path.join(path_cont,'test' + suffix + '.png'))
+
+
+mse = np.mean((rn.get_metric_test('y_true_scaled')-
+                      rn.get_metric_test('y_pred_scaled'))**2)
+mse_internal = np.mean(rn.get_metric_test('mse_scaled'))
+
+print('MSE = {}; MSE scaled = {}'.format(mse,mse_internal))
+rn.report(filename_test = os.path.join(res_dir,'test' + suffix + '.txt'))
+
+#%%
+
+import numpy
+import pandas
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# define base model
+def baseline_model():
+	# create model
+	model = Sequential()
+	model.add(Dense(13, input_dim=13, kernel_initializer='normal', activation='relu'))
+	model.add(Dense(1,activation='sigmoid',kernel_initializer='normal'))
+	# Compile model
+	model.compile(loss='mean_squared_error', optimizer='adam')
+	return model
+
+
+path_cont = './data/housing'
+fn_cont = 'housing.data'
+dataframe = pandas.read_csv(os.path.join(path_cont,fn_cont), delim_whitespace=True, header=None)
+dataset = dataframe.values
+
+output_max = np.max(dataset[:,13])
+output_min = np.min(dataset[:,13])
+dataset[:,13] = (dataset[:,13] - output_min)/( output_max-output_min)
+training_length = int(dataset.shape[0]*0.8)
+training_set = dataset[:training_length, :]
+test_length = dataset.shape[0] - training_length
+test_set = dataset[training_length:, :]
+
+
+model = baseline_model()
+
+epochs = 100
+pb = PB.ProgressBar(training_length*epochs)
+for i in range(epochs):
+    np.random.shuffle(training_set)
+    for sample in training_set:
+        x = sample[np.newaxis,0:13]
+        y = sample[np.newaxis,13]
+        model.train_on_batch(x,y,sample_weight=None, class_weight=None)
+        pb.check_progress()
+    
+y_true = np.zeros(test_length)
+y_pred = np.zeros(test_length)
+for i,sample in enumerate(test_set):
+    x = sample[np.newaxis,0:13]
+    y = sample[13]
+    y_pred[i] = model.predict_on_batch(x)*(output_max-output_min)+output_min
+    y_true[i] = y*(output_max-output_min)+output_min
+
+mse = np.mean((y_pred-y_true)**2)
+    
+print('MSE = {}'.format(mse))
+    
+
+#%%
+# fix random seed for reproducibility
+seed = 7
+numpy.random.seed(seed)
+
+
+X = dataset[:,0:13]
+Y = dataset[:,13]
+
+#valuate model with standardized dataset
+estimator = KerasRegressor(build_fn=baseline_model, epochs=100, batch_size=5, verbose=0)
+
+kfold = KFold(n_splits=10, random_state=seed)
+results = cross_val_score(estimator, X, Y, cv=kfold)
+
+
+
+print("Results: %.2f (%.2f) MSE" % (results.mean(), results.std()))
+
+
+
