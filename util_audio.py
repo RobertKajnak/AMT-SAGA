@@ -93,6 +93,8 @@ class audio_complete:
         self._D = None
         self._ref_mag = None
         self._mag = val
+        if self._ph is not None and self._ph.shape != val.shape:
+            self._ph = None
         self._F = None
         self._wf = None
         
@@ -121,6 +123,8 @@ class audio_complete:
     @D.setter
     def D(self, val):
         self._D = val
+        if self._ph is not None and self._ph.shape != val.shape:
+            self._ph = None
         #self._ref_mag = None -- If only the D is modified, the reference is
         #probably still the same
         self._mag = None
@@ -211,6 +215,33 @@ class audio_complete:
         nac._D = cc(self._D,)
         
         return nac
+    
+    def slice_power(self,start_in_frames, duration_in_frames):
+        """Slices a part of the ac. waveform is not calculated.
+        The data is not copied, the class is modified. Section outside are lost.
+        """
+        self._wf = None
+        self._F = self._F[:,start_in_frames:duration_in_frames]
+        self._mag = self._mag[:,start_in_frames:duration_in_frames]
+        self._ph = self._ph[:,start_in_frames:duration_in_frames]
+        self._D = self._D[:,start_in_frames:duration_in_frames]
+
+    def _concus(self,dest,src):
+        if src is None or dest is None:
+            return None
+        else:
+            return np.concatenate((src,dest),axis=1)
+    
+    def concat_power(self,ac):
+        """Concatenates two ac's. Waveform not calculated
+        The data is not copied, no warranty is provided"""
+        
+        self._wf = None
+        self._F = self._concus(self._F,ac._F)
+        self._mag = self._concus(self._mag,ac._mag)
+        self._ph = self._concus(self._ph,ac._ph)
+        self._D = self._concus(self._D,ac._D)
+        
 
     def resize(self,start,duration,NN_input_shape):
         """ A new array is returned that is the resized the audio snippet to 
