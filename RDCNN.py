@@ -38,9 +38,7 @@ from tensorflow.keras.layers import AveragePooling2D
 
 
 class res_net:
-    def __init__(self,checkpoint_dir=None,checkpoint_prefix='checkpoint',checkpoint_frequency=5000,
-                 weights_checkpoint_filename=None,starting_checkpoint_index=1,
-                 verbose = True,
+    def __init__(self,
                  input_shapes = [(20,2049,1,),(20,256,1,)],
                  output_classes = 128,
                  output_range=[0,128],
@@ -52,17 +50,16 @@ class res_net:
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
                  residual_layer_frequencies = 2,
-                 metrics = ['acc']):
+                 metrics = ['acc'],
+                 
+                 checkpoint_dir=None,checkpoint_prefix='checkpoint',
+                 checkpoint_frequency=5000,
+                 weights_load_checkpoint_filename=None,
+                 starting_checkpoint_index=1,
+                 
+                 verbose = True):
         '''Residual net
         params:    
-            checkpoint_dir: The directory to save checkpoints to. If set to none,
-                no operation will be performed
-            checkpoint_prefix: The filename for checkpoints. E.g. a prefix ='foo' will
-                yield filenames of 'foo_1000.h5', 'foo_2000.h5' etc.
-            checkpoint_frequency: the model weights will be saved every nth batch
-            weights_checkpoint_filename: weights will be attempted to be imported from this file
-            starting_checkpoint_index: specify this to continue couning from a previous point
-
             input_shapes: the input shape of the separate input channels. The default value uses two channels.
                 For a single channel use [(n,m,1)]
             output_classes: the number of output classes. specifying a value of 1 will change the network to use a
@@ -86,6 +83,14 @@ class res_net:
                 Multiple frequencies can be specified e.g. [2,4] will insert a shortcut between every 2nd layer and
                 separately also between every 4th
             metrics: the metrics to use. See Keras documentation
+            
+            checkpoint_dir: The directory to save checkpoints to. If set to none,
+                no operation will be performed
+            checkpoint_prefix: The filename for checkpoints. E.g. a prefix ='foo' will
+                yield filenames of 'foo_1000.h5', 'foo_2000.h5' etc.
+            checkpoint_frequency: the model weights will be saved every nth batch
+            weights_load_checkpoint_filename: weights will be attempted to be imported from this file
+            starting_checkpoint_index: specify this to continue couning from a previous point
         '''
         activation_fuction = 'sigmoid'
         self.out_func_min = 0
@@ -96,16 +101,8 @@ class res_net:
         if verbose:
             print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
         
-        if residual_layer_frequencies is None:
-            residual_layer_frequencies = []
-        else:
-            try:
-                len(residual_layer_frequencies)
-            except TypeError:
-                if residual_layer_frequencies<1:
-                    residual_layer_frequencies = []
-                else:
-                    residual_layer_frequencies = [residual_layer_frequencies]
+        residual_layer_frequencies = self._to_array(residual_layer_frequencies)
+        #output_classes = self._to_array(output_classes)
             
         #44100 with 4098 buckets, leads to 44.93 samples/sec -> crop or extend to .5 sec
         #=> 20 wide, 2049 high
@@ -189,32 +186,8 @@ class res_net:
         
         self.model = model
 
-        custom_metrics = []
-        if output_classes>1:
-            def y_pred(y_true, y_pred):
-                return keras.backend.argmax(y_pred)           
-            def y_true (y_true, y_pred):
-                return y_true
-            custom_metrics = [y_pred,y_true]
-        else:
-            def mse(y_true, y_pred):
-                return (y_pred-y_true)**2
-            def mse_scaled(y_true, y_pred):
-                return (self._scale_activation_to_output(y_pred)
-                        - self._scale_activation_to_output(y_true))**2
-            def y_pred(y_true, y_pred):
-                return y_pred
-            def y_true(y_true, y_pred):
-                return y_true 
-            def y_pred_scaled(y_true, y_pred):
-                return self._scale_activation_to_output(y_pred)
-            def y_true_scaled(y_true, y_pred):
-                return self._scale_activation_to_output(y_true)
-            custom_metrics = [mse,mse_scaled,
-                              y_pred,y_true,
-                              y_pred_scaled,y_true_scaled]
-            
-        #Add the newly defined metrics to the ones in the params
+        #Create the default metrics and add it to the ones in the params
+        custom_metrics = self._define_metrics(output_classes)
         for m in custom_metrics:
             metrics.append(m)
 
@@ -230,10 +203,10 @@ class res_net:
                   metrics=metrics)
 
         
-        if weights_checkpoint_filename is not None:
+        if weights_load_checkpoint_filename is not None:
             if verbose:
                 print('Loading Weights...')
-            self.load_weights(weights_checkpoint_filename)
+            self.load_weights(weights_load_checkpoint_filename)
             
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_prefix = checkpoint_prefix
@@ -250,6 +223,20 @@ class res_net:
         else:
             self.metrics_true_ind = self._get_metric_ind('y_true')
         
+        
+    def _to_array(self,single):
+        #As in single value, not precision
+        if single is None:
+            single = []
+        else:
+            try:
+                len(single)
+            except TypeError:
+                if single<1:
+                    single = []
+                else:
+                    single = [single]
+        return single
         
     def _scale_output_to_activation(self,x):
         return ((x - self.out_val_min)/self.out_val_factor)* \
@@ -277,6 +264,31 @@ class res_net:
             intermediate = BatchNormalization()(intermediate)
             return Add()([intermediate,layer_to])
             
+    def _define_metrics(self,output_classes):
+        if output_classes>1:
+            def y_pred(y_true, y_pred):
+                return keras.backend.argmax(y_pred)           
+            def y_true (y_true, y_pred):
+                return y_true
+            custom_metrics = [y_pred,y_true]
+        else:
+            def mse(y_true, y_pred):
+                return (y_pred-y_true)**2
+            def mse_scaled(y_true, y_pred):
+                return (self._scale_activation_to_output(y_pred)
+                        - self._scale_activation_to_output(y_true))**2
+            def y_pred(y_true, y_pred):
+                return y_pred
+            def y_true(y_true, y_pred):
+                return y_true 
+            def y_pred_scaled(y_true, y_pred):
+                return self._scale_activation_to_output(y_pred)
+            def y_true_scaled(y_true, y_pred):
+                return self._scale_activation_to_output(y_true)
+            custom_metrics = [mse,mse_scaled,
+                              y_pred,y_true,
+                              y_pred_scaled,y_true_scaled]
+        return custom_metrics
     
     def train(self,x,y):
         """Wrapper for train_on_batch. 
@@ -285,8 +297,8 @@ class res_net:
         Sample and class weights constant
         Returns the scaled predicted value
         """
-        print('x format = {}'.format(x[0].shape))
-        print('y={}'.format(y))        
+#        print('x format = {}'.format(x[0].shape))
+#        print('y={}'.format(y))        
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
