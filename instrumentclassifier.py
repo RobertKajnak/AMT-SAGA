@@ -28,9 +28,9 @@ class InstrumentClassifier(res_net):
         self.params = params
 
     def classify(self, ac, instrument_gold=None):
-        if ac.F.shape != (self.params.N / 2, self.params.pitch_input_shape):
+        if ac.mag.shape != (self.params.N / 2, self.params.pitch_input_shape):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.format(
-                (int(self.params.N / 2), self.params.pitch_input_shape), ac.shape))
+                (int(self.params.N / 2), self.params.pitch_input_shape), ac.mag.shape))
 
         expanded = ac.mag[np.newaxis,:,:,np.newaxis]
         if instrument_gold is None:

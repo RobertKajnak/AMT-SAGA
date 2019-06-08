@@ -17,7 +17,7 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
-
+#import ProgressBar as PB
 
 class Hyperparams:
     def __init__(self, N=4096, sr=44100, H=None, window_size_note_time=None):
@@ -57,26 +57,33 @@ def relevant_notes(sequence, offset, duration):
 # noinspection PyShadowingNames
 def pre_train(path, sf_path, params):
     """ Prepare data, training and test"""
+    DEBUG = True
     dm = util_dataset.DataManager(path, sets=['training', 'test'], types=['midi'])
 #    onset_detector = OnsetDetector(params)
 #    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
 #    duration_detector = DurationDetector(params)
 #    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
-#    pitch_classifier = PitchClassifier(params)
-#    pitch_classifier.plot_model(os.path.join(path,'model_meta','pitch'+'.png'))
-#    instrument_classifier = InstrumentClassifier(params)
-#    instrument_classifier.plot_model(os.path.join(path,'model_meta','instrument'+'.png'))
+    if DEBUG:
+        print('Loading Pitch Classifier')
+    pitch_classifier = PitchClassifier(params)
+    pitch_classifier.plot_model(os.path.join(path,'model_meta','pitch'+'.png'))
+    if DEBUG:
+        print('Loading Instrument Classifier')
+    instrument_classifier = InstrumentClassifier(params)
+    instrument_classifier.plot_model(os.path.join(path,'model_meta','instrument'+'.png'))
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
+#    pb = PB.ProgressBar(300000)
     dm.set_set('training')
     for fn in dm:
         mid = note_sequence(fn[0])
 
         sheet = note_sequence()
-
-        DEBUG = 1
+        
+        if DEBUG:
+            DEBUG = 1
         if DEBUG:
             audio_w_last = None
         offset = 0
@@ -97,8 +104,8 @@ def pre_train(path, sf_path, params):
 
             if DEBUG:
                 fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
-                print(fn_base)
-                if audio_w is not audio_w_last or True: #only print when new section emerges
+                print('Saving to {}'.format(fn_base))
+                if audio_w is not audio_w_last: #only print when new section emerges
                    audio_w.save(fn_base+'.flac')
 #                   audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
                 
@@ -136,10 +143,15 @@ def pre_train(path, sf_path, params):
                                                        params.window_size_note_time)
                 continue
 
-            audio_sw = audio_w.resize(onset_gold, duration_gold, params.pitch_input_shape)
+            audio_sw = audio_w.resize(onset_gold, duration_gold, 
+                                      params.pitch_input_shape,
+                                      attribs=['mag','ph'])
 
-#            pitch_s = pitch_classifier.classify(audio_sw, pitch_gold)
-#            instrument_sw = instrument_classifier.classify(audio_sw, instrument_gold)
+            pitch_s = pitch_classifier.classify(audio_sw, pitch_gold)
+            instrument_sw = instrument_classifier.classify(audio_sw, instrument_gold)
+#            pb.check_progress()
+            pitch_s = int(pitch_s)
+            instrument_sw = int(instrument_sw)
 
             # subtract correct note for training:
             note_guessed = note_sequence()
@@ -154,11 +166,11 @@ def pre_train(path, sf_path, params):
                 note_last = note_gold
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
 
-#            onset_s = onset_gold
+            onset_s = onset_gold
+            duration_s = duration_gold
 #            instrument_sw = instrument_gold
 #            pitch_s = pitch_gold
-#            duration_s = duration_gold
-#            sheet.add_note(instrument_sw, instrument_sw, pitch_s, onset_s + offset, onset_s + offset + duration_s)
+            sheet.add_note(instrument_sw, instrument_sw, pitch_s, onset_s + offset, onset_s + offset + duration_s)
 
         fn_result = os.path.join(path, 'results', os.path.split(fn[0])[-1])
         sheet.save(fn_result)

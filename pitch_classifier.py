@@ -31,16 +31,17 @@ class pitch_classifier(res_net):
         self.params = params
         
     def classify(self, ac, pitch_gold = None):
-        if ac.F.shape != (self.params.N/2,self.params.pitch_input_shape):
+        if ac.mag.shape != (self.params.N/2,self.params.pitch_input_shape):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
                              format((int(self.params.N/2),
-                                     self.params.pitch_input_shape),ac.F.shape))
+                                     self.params.pitch_input_shape),ac.mag.shape))
 
         expanded = ac.mag[np.newaxis,:,:,np.newaxis]
+        gold_expanded = np.expand_dims(pitch_gold,axis=0)
         if pitch_gold is None:
             pitch_pred = self.predict([expanded])
         else:
-            pitch_pred = self.train([expanded], [pitch_gold])
+            pitch_pred = self.train([expanded], gold_expanded)
 
         # return int(np.random.rand()*107)
 
