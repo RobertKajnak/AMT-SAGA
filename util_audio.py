@@ -251,36 +251,70 @@ class audio_complete:
         self._D = self._concus(self._D,ac._D)
         
 
-    def resize(self,start,duration,NN_input_shape):
-        """ A new array is returned that is the resized the audio snippet to 
-            a size good for NN input. Does not modify the instance content
-        """
-        t = self._seconds_to_frames(duration)
-        s = self._seconds_to_frames(start)
-        F = self.F[:,s:t] #If it is longer, it will take a shorter section starting from s
-        t = F.shape[1]
+    def _resize(self,P,target_frame_count):
+        t = P.shape[1]
         
         if t==0:
-            return np.zeros((F.shape[0],NN_input_shape))
-        elif t==NN_input_shape:
-            resd = F
+            return np.zeros((P.shape[0],target_frame_count))
+        elif t==target_frame_count:
+            resd = P
         elif t<3:
-            resd = np.tile(F[:,-1:],NN_input_shape)
-        elif t<NN_input_shape:
+            resd = np.tile(P[:,-1:],target_frame_count)
+        elif t<target_frame_count:
             lim = np.min((4,int(np.round(t/3))))
-            l_t = int(np.floor((NN_input_shape - 2 * lim)/(t-2*lim)))
-            tiled = np.tile(F[:,lim:-lim],l_t)
-            resd = np.concatenate((F[:,:lim],
+            l_t = int(np.floor((target_frame_count - 2 * lim)/(t-2*lim)))
+            tiled = np.tile(P[:,lim:-lim],l_t)
+            resd = np.concatenate((P[:,:lim],
                                    tiled,
-                                   F[:,-(NN_input_shape-tiled.shape[1]-lim):]),
+                                   P[:,-(target_frame_count-tiled.shape[1]-lim):]),
                                    axis=1)
         else:
-            lim = np.int(np.min([4,NN_input_shape/3]))
-            cent = int(np.floor(F.shape[1]/2))
-            cl = cent - int(np.floor(NN_input_shape/2)) + lim
-            ch = cent + int(np.ceil(NN_input_shape/2)) - lim 
-            resd = np.concatenate((F[:,:lim],F[:,cl:ch],F[:,-lim:]),axis=1)
+            lim = np.int(np.min([4,target_frame_count/3]))
+            cent = int(np.floor(P.shape[1]/2))
+            cl = cent - int(np.floor(target_frame_count/2)) + lim
+            ch = cent + int(np.ceil(target_frame_count/2)) - lim 
+            resd = np.concatenate((P[:,:lim],P[:,cl:ch],P[:,-lim:]),axis=1)
         return resd
+
+    def resize(self,start,duration,target_frame_count, attribs=['F']):
+        """ A new ac is returned that has a single data attribute set, specified
+            as a parameter. Hyperparameters copied. ref_mag copied if available.
+            Does not modify the instance content.
+            params:
+                start: start time in seconds for the subsection
+                duration: duration in seconds of the subsection. Can be larger,
+                    smaller or equal to the target. The content is adjusted 
+                    based on the relative sizes
+                target_frame_count: the number of frames expected at the output
+                attribs: The attributes to perform the transformation on.
+                    Possibilities: 'F', 'mag', 'ph' (suggested to use together),
+                        'D'. Otherwise an exception will be thrown
+                    If the attribute is missing from the current instance, it
+                    will be calculated
+                
+        """
+        nac = audio_complete(None,
+                     self.N,hop_length=self.hl,center=self.center,
+                     sample_rate=self.sr)
+        if self._ref_mag is not None:
+            nac._ref_mag = self._ref_mag
+        
+        t = self._seconds_to_frames(duration)
+        s = self._seconds_to_frames(start)        
+        #If it is longer, it will take a shorter section starting from s
+        for attrib in attribs:
+            if attrib=='F':
+                nac.F = self._resize(self.F[:,s:t],target_frame_count)
+            elif attrib=='mag':
+                nac.mag = self._resize(self.mag[:,s:t],target_frame_count)
+            elif attrib =='ph':
+                nac.ph = self._resize(self.ph[:,s:t],target_frame_count)
+            elif attrib =='D':
+                nac.D = self._resize(self.ph[:,s:t],target_frame_count)
+            else:
+                raise ValueError('Invalid attribute requested')
+                
+        return nac
         
     def plot_spec(self,width=12,height = 5):
         
