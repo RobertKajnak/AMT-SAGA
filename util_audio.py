@@ -183,7 +183,11 @@ class audio_complete:
         """Creates a copy of a section and returns it. The D, F et.c will remain calculated
         Start and end specified in seconds. They will be rounded down to the nearest
         Fourier frame. If duration in frames is specifies, it overrides the end time specification.
-        If the section specified is bigger than the array, the remainder is padded with 0s"""
+        If the section specified is bigger than the array, the remainder is padded with 0s
+        params:
+            start: start time in seconds
+            end: end time in seconds
+            duration_in_frames: duration of the slice, expressed in frames. Overwrites end"""
         tfs = self._seconds_to_frames(start)
         if duration_in_frames is None:
             tfe = self._seconds_to_frames(end)
@@ -216,21 +220,25 @@ class audio_complete:
         
         return nac
     
-    def slice_power(self,start_in_frames, duration_in_frames):
+    def slice_power(self,start_in_frames, end_in_frames):
         """Slices a part of the ac. waveform is not calculated.
         The data is not copied, the class is modified. Section outside are lost.
         """
         self._wf = None
-        self._F = self._F[:,start_in_frames:duration_in_frames]
-        self._mag = self._mag[:,start_in_frames:duration_in_frames]
-        self._ph = self._ph[:,start_in_frames:duration_in_frames]
-        self._D = self._D[:,start_in_frames:duration_in_frames]
+        if self._F is not None:
+            self._F = self._F[:,start_in_frames:end_in_frames]
+        if self._mag is not None:
+            self._mag = self._mag[:,start_in_frames:end_in_frames]
+        if self._ph is not None:
+            self._ph = self._ph[:,start_in_frames:end_in_frames]
+        if self._D is not None:
+            self._D = self._D[:,start_in_frames:end_in_frames]
 
     def _concus(self,dest,src):
         if src is None or dest is None:
             return None
         else:
-            return np.concatenate((src,dest),axis=1)
+            return np.concatenate((dest,src),axis=1)
     
     def concat_power(self,ac):
         """Concatenates two ac's. Waveform not calculated
