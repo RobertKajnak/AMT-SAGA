@@ -22,7 +22,7 @@ import copy
 
 class audio_complete:
     def __init__(self,waveform,n_fft,hop_length=None,center=True,sample_rate=44100):
-        self.wf = waveform
+        self._wf = waveform
         self._F = None
         self._mag = None
         self._ref_mag = None
@@ -39,6 +39,35 @@ class audio_complete:
         """Copies the parameters and a deepcopy of the waveform"""
         return audio_complete(copy.deepcopy(self.wf),self.N,self.hl,self.sr)
     
+    
+    @property
+    def wf(self):
+        if self._wf is None:
+            if self._F is not None:
+                self._wf = librosa.istft(self._F,
+                                       hop_length=self.hl,center=self.center)
+            elif self._mag is not None and self._ph is not None:
+                self._F = self._mag * self._ph
+                self._wf = librosa.istft(self._F,
+                                       hop_length=self.hl,center=self.center)
+            elif self._D is not None and self._ph is not None:
+                if self._ref_mag is None:
+                    self._ref_mag = 1.0;
+                self._mag = librosa.db_to_amplitude(self._D,ref = self._ref_mag)
+                self._F = self._mag * self._ph
+                self._wf = librosa.istft(self._F,
+                                       hop_length=self.hl,center=self.center)
+                
+        return self._wf
+    @wf.setter
+    def wf(self,value):
+        self._D = None
+        self._ref_mag = None
+        self._mag = None
+        self._ph = None
+        self._F = None
+        self._wf = value
+    
     @property
     def F(self):
         if self._F is None:
@@ -52,8 +81,7 @@ class audio_complete:
         self._mag = None
         self._ph = None
         self._F = value
-        self.wf = librosa.istft(self._F,
-                                   hop_length=self.hl,center=self.center)
+        self._wf = None
     
     @property
     def mag(self):
@@ -65,8 +93,8 @@ class audio_complete:
         self._D = None
         self._ref_mag = None
         self._mag = val
-        self._F = self._mag * self._ph
-        self.wf = librosa.istft(self._F)
+        self._F = None
+        self._wf = None
         
     @property
     def ph(self):
@@ -76,8 +104,8 @@ class audio_complete:
     @ph.setter
     def ph(self,val):
         self._ph = val
-        self._F = self._mag*self._ph
-        self.wf = librosa.istft(self._F)
+        self._F = None
+        self._wf = None
 
     @property
     def ref_mag(self):
@@ -93,10 +121,11 @@ class audio_complete:
     @D.setter
     def D(self, val):
         self._D = val
-        #self._ref_mag = None
-        self._mag = librosa.db_to_amplitude(self._D,ref = self.ref_mag)
-        self._F = self._mag*self._ph
-        self.wf = librosa.istft(self._F)
+        #self._ref_mag = None -- If only the D is modified, the reference is
+        #probably still the same
+        self._mag = None
+        self._F = None
+        self._wf = None
     
     def subtract(self,subtrahend, offset=0,attack_compensation=0,
                      normalize = True, relu = True, overkill_factor = 1):
