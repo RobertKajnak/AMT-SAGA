@@ -44,8 +44,10 @@ class res_net:
                  input_shapes = [(20,2049,1,),(20,256,1,)],
                  output_classes = 128,
                  output_range=[0,128],
+                 
                  kernel_sizes = [(3,32),(3,8)],
                  pool_sizes = [(2,5),(2,5)],
+                 
                  convolutional_layer_count = 15,
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
@@ -212,6 +214,7 @@ class res_net:
                               y_pred,y_true,
                               y_pred_scaled,y_true_scaled]
             
+        #Add the newly defined metrics to the ones in the params
         for m in custom_metrics:
             metrics.append(m)
 
@@ -242,6 +245,10 @@ class res_net:
         
         self.metrics_train = []
         self.metrics_test = []
+        if output_classes==1:
+            self.metrics_true_ind = self._get_metric_ind('y_true_scaled')
+        else:
+            self.metrics_true_ind = self._get_metric_ind('y_true')
         
         
     def _scale_output_to_activation(self,x):
@@ -276,8 +283,10 @@ class res_net:
         Rescales output when specified in the constructor.
         Creates checkpoints when needed.
         Sample and class weights constant
+        Returns the scaled predicted value
         """
-        
+        print('x format = {}'.format(x[0].shape))
+        print('y={}'.format(y))        
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
@@ -304,9 +313,12 @@ class res_net:
                     )
         self.current_batch += 1
         
+        return self.metrics_train[-1][self.metrics_true_ind]
     
     def test(self,x,y):
-        """Wrapper for test_on_batch. Sample weights constant"""
+        """Wrapper for test_on_batch. Sample weights constant
+        Returns the scaled predicted value"""
+        
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
@@ -314,6 +326,8 @@ class res_net:
         self.metrics_test.append(
                 self.model.test_on_batch(x, y, sample_weight=None)
                 )
+        
+        return self.metrics_test[-1][self.metrics_true_ind]
         
     def predict(self,x):
         """Calculates the output for input x"""
@@ -462,12 +476,6 @@ class res_net:
         plt.grid(False)
         plt.show()
         
-        
-class AccuracyHistory(keras.callbacks.Callback):
-    def on_train_begin(self, logs={}):
-        self.acc = []
 
-    def on_epoch_end(self, batch, logs={}):
-        self.acc.append(logs.get('acc'))
         
     

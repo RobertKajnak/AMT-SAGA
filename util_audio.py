@@ -247,6 +247,14 @@ class note_sequence:
     _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
              'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
                  'B':11,'H':11}  
+        
+    def clone(self):
+        s_clone = note_sequence()
+        s_clone.prev_octave = self.prev_octave
+        
+        for note in self.sequence.notes:
+            s_clone.append(note,copy=True)
+        return s_clone
     
     def append(self, note, copy=False):
         """If copy is set to true, the note is cloned first. Otherwise reference is passed
@@ -346,22 +354,6 @@ class note_sequence:
             
         return ns_inc,ns_exc 
     
-    def clone(self):
-        s_clone = note_sequence()
-        s_clone.prev_octave = self.prev_octave
-        
-        for note in self.sequence.notes:
-            s_clone.append(note,copy=True)
-        return s_clone
-    
-    def shift(self, time):
-        for note in self.sequence.notes:
-            note.start_time+=time
-            note.end_time+=time
-        
-        self.duration += time
-        self.start_first += time
-    
     def pop(self,lowest = True, threshold=0.05):
         """Returns and removes the first element from the note sequence
         The order is determined by the parameters
@@ -411,6 +403,23 @@ class note_sequence:
         
         return first
     
+    def shift(self, time):
+        for note in self.sequence.notes:
+            note.start_time+=time
+            note.end_time+=time
+        
+        self.duration += time
+        self.start_first += time
+        
+    def merge_duplicates(self,temporal_resolution = 100):
+        """ Merges notes that are of the same instrument and are at least partially
+        overlapping, i.e. start1"""
+        
+        #For each instrument create a binary piano roll, check overlaps and 
+        #modify notes accordingly
+        pass
+        
+        
     def render(self, soundfont_filename=None,max_duration = None,sample_rate=44100):
         """Generate waveform for the stored sequence"""
         mid = midi_io.note_sequence_to_pretty_midi(self.sequence)

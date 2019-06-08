@@ -10,7 +10,7 @@ import numpy as np
 from RDCNN import res_net
 
 
-class OnsetDetector(res_net):
+class DurationDetector(res_net):
     def __init__(self, params):
         super().__init__(input_shapes=[(params.N / 2, params.timing_input_shape, 1)],
                          kernel_sizes=params.kernel_sizes, pool_sizes=params.pool_sizes,
@@ -28,7 +28,7 @@ class OnsetDetector(res_net):
 
         self.params = params
 
-    def detect(self, ac, start_gold=None):
+    def detect(self, ac, duration_gold=None):
         if ac.F.shape != (self.params.N / 2, self.params.timing_input_shape):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
                              format((int(self.params.N / 2), self.params.timing_input_shape),
@@ -36,9 +36,9 @@ class OnsetDetector(res_net):
         # start = np.random.rand() * ac.F.shape[1]
         # duration = np.random.rand() * (ac.F.shape[1] / 42 - start)
         expanded = ac.mag[np.newaxis,:,:,np.newaxis]
-        if start_gold is None:
-            start = self.predict([expanded])
+        if duration_gold is None:
+            duration = self.predict([expanded])
         else:
-            start = self.train([expanded], np.expand_dims(start_gold,axis=0))
+            duration = self.train([expanded], np.expand_dims(duration_gold,axis=0))
 
-        return start
+        return duration

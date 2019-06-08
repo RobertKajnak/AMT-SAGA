@@ -3,14 +3,17 @@
 Created on Sun Mar 24 17:04:08 2019
 
 @author: Hesiris
+
+Dataset: https://colinraffel.com/projects/lmd/
 """
 
 import numpy as np
 import os
 
-from onset_detector import onset_detector as OnsetDetector
+from onsetdetector import OnsetDetector as OnsetDetector
+from durationdetector import DurationDetector as DurationDetector
 from pitch_classifier import pitch_classifier as PitchClassifier
-from instrument_classifier import instrument_classifier as InstrumentClassifier
+from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
@@ -25,6 +28,18 @@ class Hyperparams:
         self.window_th = 0.2 if window_th is None else window_th
         self.pitch_input_shape = 20
         self.timing_input_shape = 215
+
+        self.kernel_sizes = [(32, 3), (32,3)]
+        self.pool_sizes = [(5, 2), (5, 2)]
+#        self.kernel_sizes_pitch = [(3, 32), (3, 8)]
+#        self.pool_sizes_pitch = [(2, 5), (2, 5)]
+
+        self.checkpoint_dir = './data/checkpoints'
+        self.checkpoint_frequency = 5000
+        self.convolutional_layer_count = 11
+        self.pool_layer_frequency = 4
+        self.feature_expand_frequency = 4  # pool_layer_frequency
+        self.residual_layer_frequencies = [2]
 
 
 def relevant_notes(sequence, audio, offset, duration, duration_in_frames):
@@ -46,8 +61,13 @@ def pre_train(path, sf_path, params):
     """ Prepare data, training and test"""
     dm = util_dataset.DataManager(path, sets=['training', 'test'], types=['midi'])
     onset_detector = OnsetDetector(params)
+    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
+    duration_detector = DurationDetector(params)
+    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
     pitch_classifier = PitchClassifier(params)
+    pitch_classifier.plot_model(os.path.join(path,'model_meta','pitch'+'.png'))
     instrument_classifier = InstrumentClassifier(params)
+    instrument_classifier.plot_model(os.path.join(path,'model_meta','instrument'+'.png'))
     frametime = params.H / params.sr
 
     dm.set_set('training')
@@ -90,7 +110,8 @@ def pre_train(path, sf_path, params):
                 instrument_gold = note_gold.program
             else:
                 onset_gold = params.window_size_note_time + offset
-            onset_s, duration_s = onset_detector.detect(audio_w, onset_gold, duration_gold)
+            onset_s = onset_detector.detect(audio_w, onset_gold)
+            duration_s = duration_detector.detect(audio_w, duration_gold)
 
             # use correct value to move window
             if onset_gold + duration_gold >= offset + params.window_size_note_time:
