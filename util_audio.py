@@ -131,6 +131,17 @@ class audio_complete:
         self._F = None
         self._wf = None
     
+    @property
+    def shape(self):
+        if self._mag is not None:
+            return self._mag.shape
+        if self._ph is not None:
+            return self._mag.shape
+        if self._D is not None:
+            return self._D.shape
+        #if nothing esle is set, F needs to be calculated from wf
+        return self.F.shape
+    
     def subtract(self,subtrahend, offset=0,attack_compensation=0,
                      normalize = True, relu = True, overkill_factor = 1):
         """ self is the minuend and the subtrahend is provided
@@ -174,10 +185,10 @@ class audio_complete:
         
     def _seconds_to_frames(self,time):
         """Converts a from seconds to frames in fourier"""
-        return int(np.floor(time * self.F.shape[1]*self.sr / self.wf.shape[0]))
+        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
     
     def _frames_to_seconds(self,frames):
-        return frames/self.F.shape[1]/ self.sr * self.wf.shape[0]
+        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
 
     def section(self, start,end, duration_in_frames=None):
         """Creates a copy of a section and returns it. The D, F et.c will remain calculated
