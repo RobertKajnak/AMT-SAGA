@@ -71,7 +71,15 @@ class audio_complete:
     @property
     def F(self):
         if self._F is None:
-            self._F = librosa.stft(self.wf,n_fft = self.N,
+            if self._mag is not None and self._ph is not None:
+                self._F = self._mag * self._ph
+            elif self._D is not None and self._ph is not None:
+                if self._ref_mag is None:
+                    self._ref_mag = 1.0;
+                self._mag = librosa.db_to_amplitude(self._D,ref = self._ref_mag)
+                self._F = self._mag * self._ph
+            elif self.wf is not None:
+                self._F = librosa.stft(self.wf,n_fft = self.N,
                                    hop_length=self.hl,center=self.center)
         return self._F
     @F.setter
@@ -86,7 +94,12 @@ class audio_complete:
     @property
     def mag(self):
         if self._mag is None:
-            self._mag,self._ph = librosa.core.magphase(self.F)
+            if self._D is not None and self._ph is not None:
+                if self._ref_mag is None:
+                    self._ref_mag = 1.0;
+                self._mag = librosa.db_to_amplitude(self._D,ref = self._ref_mag)
+            else:
+                self._mag,self._ph = librosa.core.magphase(self.F)
         return self._mag
     @mag.setter
     def mag(self,val):
@@ -185,11 +198,15 @@ class audio_complete:
         
     def _seconds_to_frames(self,time):
         """Converts a from seconds to frames in fourier"""
-        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
+#        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
+        return librosa.core.time_to_frames(time,sr=self.sr, hop_length=self.hl, 
+                                           n_fft=self.N)
     
     def _frames_to_seconds(self,frames):
-        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
-
+#        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
+        return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
+                                           n_fft=self.N)
+    
     def section(self, start,end, duration_in_frames=None):
         """Creates a copy of a section and returns it. The D, F et.c will remain calculated
         Start and end specified in seconds. They will be rounded down to the nearest
@@ -205,11 +222,14 @@ class audio_complete:
         else:
             tfe = tfs+duration_in_frames
         
-        wav_start = int(np.floor(self._frames_to_seconds(tfs) * self.sr))
-        wav_end = int(np.floor(self._frames_to_seconds(tfe) * self.sr))
-        wav_cp = copy.deepcopy(self.wf[wav_start:wav_end])
-        if wav_cp.shape[0]<wav_end-wav_start:
-            wav_cp = np.concatenate((wav_cp,np.zeros(wav_end - wav_cp.shape[0])))
+        if self._wf is not None:
+            wav_start = int(np.floor(self._frames_to_seconds(tfs) * self.sr))
+            wav_end = int(np.floor(self._frames_to_seconds(tfe) * self.sr))
+            wav_cp = copy.deepcopy(self.wf[wav_start:wav_end])
+            if wav_cp.shape[0]<wav_end-wav_start:
+                wav_cp = np.concatenate((wav_cp,np.zeros(wav_end - wav_cp.shape[0])))
+        else:
+            wav_cp = None
         nac = audio_complete(wav_cp,
                              self.N,hop_length=self.hl,center=self.center,sample_rate=self.sr)
         
@@ -227,15 +247,17 @@ class audio_complete:
         nac._ref_mag = self._ref_mag
         nac._mag = cc(self._mag)
         nac._ph =cc(self._ph)
-        nac._D = cc(self._D,)
+        nac._D = cc(self._D)
         
         return nac
     
     def slice_power(self,start_in_frames, end_in_frames):
-        """Slices a part of the ac. waveform is not calculated.
+        """Takes a slice from both power and waveform, where available.
         The data is not copied, the class is modified. Section outside are lost.
         """
-        self._wf = None
+        if self._wf is not None:
+            self._wf = self._wf[int(self._frames_to_seconds(start_in_frames)*self.sr):
+                                int(self._frames_to_seconds(end_in_frames)*self.sr)]
         if self._F is not None:
             self._F = self._F[:,start_in_frames:end_in_frames]
         if self._mag is not None:
@@ -244,6 +266,7 @@ class audio_complete:
             self._ph = self._ph[:,start_in_frames:end_in_frames]
         if self._D is not None:
             self._D = self._D[:,start_in_frames:end_in_frames]
+            
 
     def _concus(self,dest,src):
         if src is None or dest is None:
@@ -255,12 +278,14 @@ class audio_complete:
         """Concatenates two ac's. Waveform not calculated
         The data is not copied, no warranty is provided"""
         
-        self._wf = None
+        self._wf = None        
         self._F = self._concus(self._F,ac._F)
         self._mag = self._concus(self._mag,ac._mag)
         self._ph = self._concus(self._ph,ac._ph)
         self._D = self._concus(self._D,ac._D)
-        
+
+        if self._F is None and self._mag is None and self._D is None:
+            self._F = self._concus(self.F,ac.F)
 
     def _resize(self,P,target_frame_count):
         t = P.shape[1]
