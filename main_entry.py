@@ -9,6 +9,7 @@ Dataset: https://colinraffel.com/projects/lmd/
 
 import numpy as np
 import os
+import argparse
 
 from onsetdetector import OnsetDetector as OnsetDetector
 from durationdetector import DurationDetector as DurationDetector
@@ -17,7 +18,7 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
-#import ProgressBar as PB
+import ProgressBar as PB
 
 class Hyperparams:
     def __init__(self, N=4096, sr=44100, H=None, window_size_note_time=None):
@@ -35,9 +36,9 @@ class Hyperparams:
 
         self.checkpoint_dir = './data/checkpoints'
         self.checkpoint_frequency = 5000
-        self.convolutional_layer_count = 11
-        self.pool_layer_frequency = 4
-        self.feature_expand_frequency = 4  # pool_layer_frequency
+        self.convolutional_layer_count = 33
+        self.pool_layer_frequency = 12
+        self.feature_expand_frequency = 12  # pool_layer_frequency
         self.residual_layer_frequencies = [2]
 
 
@@ -75,7 +76,7 @@ def pre_train(path, sf_path, params):
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
-#    pb = PB.ProgressBar(300000)
+    pb = PB.ProgressBar(300000)
     dm.set_set('training')
     for fn in dm:
         mid = note_sequence(fn[0])
@@ -103,13 +104,13 @@ def pre_train(path, sf_path, params):
         while offset < mid.duration:
 
             if DEBUG:
-                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
-                print('Saving to {}'.format(fn_base))
-                if audio_w is not audio_w_last: #only print when new section emerges
-                   audio_w.save(fn_base+'.flac')
-#                   audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
-                
-                   audio_w_last = audio_w
+#                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
+#                print('Saving to {}'.format(fn_base))
+#                if audio_w is not audio_w_last: #only print when new section emerges
+#                   audio_w.save(fn_base+'.flac')
+##                   audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
+#                
+#                   audio_w_last = audio_w
 #                   notes_target.save(fn_base+'_target.mid')
 #                   notes_w.save(fn_base+'_inclusive.mid')
                 DEBUG += 1
@@ -117,8 +118,8 @@ def pre_train(path, sf_path, params):
             note_gold = notes_target.pop(lowest=True, threshold=frametime)
             # training
             if note_gold is not None:
-                print('Offset/Note start time = {:.3f} / {:.3f}'.
-                      format(offset, note_gold.start_time))
+                print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
+                      format(offset, note_gold.start_time,note_gold.end_time))
                 
                 onset_gold = note_gold.start_time
                 duration_gold = note_gold.end_time - note_gold.start_time
@@ -136,6 +137,8 @@ def pre_train(path, sf_path, params):
                 
                 audio_w_new = mid_wf.section(offset+halfwindow_time,
                                              None, halfwindow_frames)
+                audio_w_new.mag # Evaluate mag to prime it for the NN. Efficiency trick
+                #Otherwise the F would be calculated for both
                 audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
                 audio_w.concat_power(audio_w_new)
                 
@@ -149,7 +152,8 @@ def pre_train(path, sf_path, params):
 
             pitch_s = pitch_classifier.classify(audio_sw, pitch_gold)
             instrument_sw = instrument_classifier.classify(audio_sw, instrument_gold)
-#            pb.check_progress()
+            pb.check_progress()
+            print('')
             pitch_s = int(pitch_s)
             instrument_sw = int(instrument_sw)
 
@@ -178,12 +182,21 @@ def pre_train(path, sf_path, params):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='AMT-SAGA entry point.')
+    parser.add_argument('-soundfont_path',nargs='?',
+                        default=os.path.join('..','soundfonts','GM_soundfonts.sf2'),
+                        help = 'The path to the soundfont file')
+    parser.add_argument('-data_path',
+                        default=os.path.join('.','data'),
+                        help = 'The directory containing the files for training,\
+                        testing etc.')
+    args = vars(parser.parse_args())
     # Hyperparams
-    path = './data/'
-    sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
-    p = Hyperparams(window_size_note_time=6)
-    p.path = path
+    path_data = args['data_path']
+    path_sf = args['soundfont_path']
+    p = Hyperparams(window_size_note_time=2)
+    p.path = path_data
 
-    pre_train(path, sf_path, p)
+    pre_train(path_data, path_sf, p)
 
     training_session = True
