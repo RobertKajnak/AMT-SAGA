@@ -22,6 +22,7 @@ from sklearn.metrics import classification_report
 import csv
 
 from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import Callback
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Activation
@@ -42,6 +43,7 @@ class res_net:
                  input_shapes = [(20,2049,1,),(20,256,1,)],
                  output_classes = 128,
                  output_range=[0,128],
+                 batch_size = 1,
                  
                  kernel_sizes = [(3,32),(3,8)],
                  pool_sizes = [(2,5),(2,5)],
@@ -127,7 +129,7 @@ class res_net:
         input_layers = []
         layers = []
         for iidx, input_shape in enumerate(input_shapes):
-            in_lay = Input(shape=input_shape,batch_size=1)
+            in_lay = Input(shape=input_shape,batch_size=batch_size)
             input_layers.append(in_lay)
             p1 = in_lay
             feature_out = 32
@@ -303,6 +305,7 @@ class res_net:
             y = self._scale_output_to_activation(y)
         
         #print(y)
+        #TODO: Check if it is possible to only update when the error values are small
         self.metrics_train.append(
                 self.model.train_on_batch(
                         x,y,sample_weight=None, class_weight=None)
@@ -326,6 +329,34 @@ class res_net:
         self.current_batch += 1
         
         return self.metrics_train[-1][self.metrics_true_ind]
+    
+    class _fit_metrics(Callback):
+        def on_train_begin(self, logs={}):
+            self.metrics_all = []
+        def on_batch_end(self, batch, logs={}):
+            self.metrics_all.append(logs)
+    
+    
+    def fit_generator(self,generator,steps_per_epoch,
+                      epochs=1,workers=1,use_multiprocessing=False):
+        #TODO: ADD Checkpointing
+        fit_metrics = self._fit_metrics()
+        self.model.fit_generator(generator, steps_per_epoch=steps_per_epoch,
+                                 epochs=epochs, verbose=0, 
+                                callbacks=[fit_metrics], 
+                                class_weight=None, 
+                                max_queue_size=10, 
+                                workers=workers, 
+                                use_multiprocessing=use_multiprocessing)
+        
+        self.metrics_train += [list(metric_batch.values())[2:] for metric_batch in fit_metrics.metrics_all]
+        if self.output_classes>1:
+            ind_true = self._get_metric_ind('y_true')
+            ind_pred = self._get_metric_ind('y_pred')
+            for i in range(len(self.metrics_train)):
+                self.metrics_train[i][ind_true] = int(self.metrics_train[i][ind_true])
+                self.metrics_train[i][ind_pred] = int(self.metrics_train[i][ind_pred])
+                
     
     def test(self,x,y):
         """Wrapper for test_on_batch. Sample weights constant
@@ -353,7 +384,7 @@ class res_net:
             return None
         return ind
     
-    def get_metric_training(self,metric):
+    def get_metric_train(self,metric):
         """Returns an array containing the datapoints for the metric
         params:
             metric: can be either a string e.g. 'loss' or numerical e.g. 0 
@@ -365,7 +396,7 @@ class res_net:
         if ind == None:
             return None
         else:
-            return np.array([val[ind] for val in self.metrics_training])
+            return np.array([val[ind] for val in self.metrics_train])
             
     def get_metric_test(self,metric):
         """Returns an array containing the datapoints for the metric
@@ -410,8 +441,8 @@ class res_net:
                     
             if training:
                 print('\nTraining Results:  ')
-                true = [r[3] for r in self.metrics_train]
-                pred = [r[2] for r in self.metrics_train]
+                true = self.get_metric_train('y_true')
+                pred = self.get_metric_train('y_pred')
                 print(classification_report(true,pred))
                 if filename_training:
                     save_report(filename_training,
@@ -420,8 +451,8 @@ class res_net:
                 
             if test:
                 print('\nTest Results:  ')
-                true = [r[3] for r in self.metrics_test]
-                pred = [r[2] for r in self.metrics_test]
+                true = self.get_metric_test('y_true')
+                pred = self.get_metric_test('y_pred')
                 print(classification_report(true,pred))
                 if filename_test:
                     save_report(filename_test,

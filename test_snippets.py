@@ -11,6 +11,7 @@ Created on Sat Mar 23 12:05:48 2019
 from util_audio import note_sequence as nsequence
 from util_audio import midi_from_file
 import util_audio
+from tensorflow.keras.utils import Sequence
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -535,6 +536,14 @@ test_images = test_images / (255.0/2)-1
 train_images = train_images.reshape(train_images.shape[0],28,28,1)
 test_images = test_images.reshape(test_images.shape[0],28,28,1)
 
+def sim_shuff(a,b):
+    c = np.c_[a.reshape(len(a), -1), b.reshape(len(b), -1)]
+    np.random.shuffle(c)
+    a2 = c[:, :a.size//len(a)].reshape(a.shape)
+    b2 = c[:, a.size//len(a):].reshape(b.shape)
+    return a2,b2
+train_images,train_labels = sim_shuff(train_images,train_labels)
+test_images,test_labels = sim_shuff(test_images,test_labels)
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
 
@@ -549,7 +558,8 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              verbose = False)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-test_set_size = 10000
+#%% Using train_on_batch
+test_set_size = 1000
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -571,8 +581,96 @@ rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suf
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
+#%% Using higher batch size
 
-#%% RNN cont
+
+test_set_size = 1000
+pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
+batch_limit = 8
+current_batch = []
+for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.train([expanded_image],expanded_label)
+    pb.check_progress()
+    
+pb = PB.ProgressBar(test_images.shape[0])
+for image,label in zip(test_images,test_labels):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test([expanded_image],expanded_label)
+    pb.check_progress()
+
+rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
+          test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
+                          class_names = class_names)
+
+rn.plot(metrics_to_plot=[1],moving_average_window=100,
+             filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
+             filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
+
+#%%USing fit_generator --- NOPE
+import threading 
+class threadsafe_iter:
+    """Takes an iterator/generator and makes it thread-safe by
+    serializing call to the `next` method of given iterator/generator.
+    """
+    def __init__(self, it):
+        self.it = it
+        self.lock = threading.Lock()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self.lock:
+            return self.it.__next__()
+        
+        
+def threadsafe_generator(f):
+    """A decorator that takes a generator function and makes it thread-safe.
+    """
+    def g(*a, **kw):
+        return threadsafe_iter(f(*a, **kw))
+    return g
+
+test_set_size = 1000
+
+def gen_mnist(train_images,train_labels,test_set_size):
+    lock = threading.Lock()
+    pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
+    for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
+        expanded_image = np.expand_dims(image,axis=0)
+        expanded_label = np.expand_dims(label,axis=0)
+        with lock:
+            yield ([expanded_image],expanded_label)
+        with lock:
+            pb.check_progress()
+    
+rn.fit_generator(gen_mnist(train_images,train_labels,test_set_size),
+                 steps_per_epoch=test_set_size,
+                 workers=8,use_multiprocessing=True)
+#for x,y in gen_mnist(train_images,train_labels,test_set_size):
+#    rn.train(x,y)
+
+test_images = test_images[:1000]
+pb = PB.ProgressBar(test_images.shape[0])
+for image,label in zip(test_images,test_labels):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test([expanded_image],expanded_label)
+    pb.check_progress()
+
+rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
+          test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
+                          class_names = class_names)
+
+rn.plot(metrics_to_plot=[1],moving_average_window=100,
+             filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
+             filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
+
+
+#%% RNN cont -- Create Model
 
 path_cont = './data/housing'
 fn_cont = 'housing.data'
@@ -608,7 +706,7 @@ rn = res_net(input_shapes=[(13,1,1)],kernel_sizes=[(1,1)],pool_sizes=[(0,0)],
 
 rn.plot_model(os.path.join(path_cont,'model_' + suffix + '.png'))
 
-epochs = 100
+epochs = 10
 pb = PB.ProgressBar(training_length*epochs)
 for i in range(epochs):
     np.random.shuffle(training_dataset)
@@ -636,9 +734,9 @@ mse = np.mean((rn.get_metric_test('y_true_scaled')-
 mse_internal = np.mean(rn.get_metric_test('mse_scaled'))
 
 print('MSE = {}; MSE scaled = {}'.format(mse,mse_internal))
-rn.report(filename_test = os.path.join(res_dir,'test' + suffix + '.txt'))
+rn.report(filename_test = os.path.join(path_cont,'test' + suffix + '.txt'))
 
-#%%
+#%% Housing data with a simple Keras model, used directly
 
 import numpy
 import pandas
@@ -677,7 +775,7 @@ test_set = dataset[training_length:, :]
 
 model = baseline_model()
 
-epochs = 100
+epochs = 1
 pb = PB.ProgressBar(training_length*epochs)
 for i in range(epochs):
     np.random.shuffle(training_set)
@@ -720,4 +818,72 @@ results = cross_val_score(estimator, X, Y, cv=kfold)
 print("Results: %.2f (%.2f) MSE" % (results.mean(), results.std()))
 
 
+#%% Generator test. Housing data with a simple Keras model, used directly
+
+import numpy
+import pandas
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.wrappers.scikit_learn import KerasRegressor
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+
+# define base model
+def baseline_model():
+	# create model
+	model = Sequential()
+	model.add(Dense(13, input_dim=13, kernel_initializer='normal', activation='relu'))
+	model.add(Dense(1,activation='sigmoid',kernel_initializer='normal'))
+	# Compile model
+	model.compile(loss='mean_squared_error', optimizer='adam')
+	return model
+
+def generate_input():
+    epochs = 1
+    pb = PB.ProgressBar(training_length*epochs)
+    for i in range(epochs):
+        np.random.shuffle(training_set)
+        for sample in training_set:
+            x = sample[np.newaxis,0:13]
+            y = sample[np.newaxis,13]
+            yield (x,y)
+#            model.train_on_batch(x,y,sample_weight=None, class_weight=None)
+            pb.check_progress()             
+
+
+path_cont = './data/housing'
+fn_cont = 'housing.data'
+dataframe = pandas.read_csv(os.path.join(path_cont,fn_cont), delim_whitespace=True, header=None)
+dataset = dataframe.values
+
+output_max = np.max(dataset[:,13])
+output_min = np.min(dataset[:,13])
+dataset[:,13] = (dataset[:,13] - output_min)/( output_max-output_min)
+training_length = int(dataset.shape[0]*0.8)
+training_set = dataset[:training_length, :]
+test_length = dataset.shape[0] - training_length
+test_set = dataset[training_length:, :]
+
+
+model = baseline_model()
+
+model.fit_generator(generate_input(),
+                    steps_per_epoch=training_length, epochs=10)
+
+    
+y_true = np.zeros(test_length)
+y_pred = np.zeros(test_length)
+for i,sample in enumerate(test_set):
+    x = sample[np.newaxis,0:13]
+    y = sample[13]
+    y_pred[i] = model.predict_on_batch(x)*(output_max-output_min)+output_min
+    y_true[i] = y*(output_max-output_min)+output_min
+
+mse = np.mean((y_pred-y_true)**2)
+    
+print('MSE = {}'.format(mse))
+    
+#%% MNIST with the fit_generator from the RDCNN
 
