@@ -56,7 +56,7 @@ class res_net:
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
                  residual_layer_frequencies = 2,
-                 metrics = ['accuracy'],
+                 metrics = ['sparse_categorical_accuracy'],
                  
                  checkpoint_dir=None,checkpoint_prefix='checkpoint',
                  checkpoint_frequency=5000,
@@ -387,7 +387,15 @@ class res_net:
         if use_predict:
             y_pred = self.model.predict_on_batch(x)
             for i in range(y.shape[0]):
-                self.metrics_test.append([0,np.argmax(y_pred[i]),y[i]])
+                nm = []
+                for m in self.metrics_names:
+                    if m=='y_pred':
+                        nm.append(np.argmax(y_pred[i]))
+                    elif m=='y_true':
+                        nm.append(y[i])
+                    else:
+                        nm.append(0)
+                self.metrics_test.append(nm)
 #                self.metrics_test.append([m(x,sample) for m in self.metrics_custom])
         else:
             self.metrics_test.append(

@@ -559,7 +559,7 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 
-test_set_size = 20000
+test_set_size = 2500
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -582,9 +582,9 @@ rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 #%% Using higher batch size
-batch_size = 32
+batch_size = 16
 
-suffi =  '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
+suffix =  '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
          '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
          '_bs' + str(batch_size)
          
@@ -597,12 +597,12 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
              checkpoint_prefix = 'checkpoint_' + suffix,
-             metrics=[],
+             metrics=['sparse_categorical_accuracy'],
              verbose = False)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 test_set_size = 20000
-pb = PB.ProgressBar(test_set_size//8,sound='beep')#(train_images.shape[0])
+pb = PB.ProgressBar(test_set_size//batch_size,sound='beep')#(train_images.shape[0])
 
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
 cb_y=np.zeros([0]+list(train_labels.shape[1:]))
@@ -619,7 +619,7 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
         cb_y=expanded_label
     
 test_set_size = 10000
-pb = PB.ProgressBar(test_set_size//8)
+pb = PB.ProgressBar(test_set_size//batch_size)
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
 cb_y=np.zeros([0]+list(train_labels.shape[1:]))
 for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
@@ -638,7 +638,7 @@ rn.report(training=False, filename_training=os.path.join(res_dir,'training' + su
           test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
 
-rn.plot(metrics_to_plot=[1],moving_average_window=100,
+rn.plot(metrics_to_plot=[0,1,2,3],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 
