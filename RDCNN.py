@@ -14,6 +14,7 @@ from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 from tensorflow import keras
 import os
+import ipdb
 
 # Helper libraries
 import numpy as np
@@ -23,6 +24,9 @@ import csv
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import Callback
+from tensorflow.keras.metrics import get as get_metric_by_name
+
+from tensorflow.keras.losses import sparse_categorical_crossentropy
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Activation
@@ -52,7 +56,7 @@ class res_net:
                  feature_expand_frequency = 6,
                  pool_layer_frequency = 6,
                  residual_layer_frequencies = 2,
-                 metrics = ['acc'],
+                 metrics = ['accuracy'],
                  
                  checkpoint_dir=None,checkpoint_prefix='checkpoint',
                  checkpoint_frequency=5000,
@@ -94,6 +98,7 @@ class res_net:
             weights_load_checkpoint_filename: weights will be attempted to be imported from this file
             starting_checkpoint_index: specify this to continue couning from a previous point
         '''
+        self.batch_size = batch_size
         activation_fuction = 'sigmoid'
         self.out_func_min = 0
         self.out_func_max = 1
@@ -102,7 +107,9 @@ class res_net:
         self.verbose = verbose
         if verbose:
             print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
-        
+        for i in range(len(metrics)):
+            if isinstance(metrics[i],str):
+                metrics[i] = get_metric_by_name(metrics[i])
         residual_layer_frequencies = self._to_array(residual_layer_frequencies)
         #output_classes = self._to_array(output_classes)
             
@@ -190,9 +197,11 @@ class res_net:
 
         #Create the default metrics and add it to the ones in the params
         custom_metrics = self._define_metrics(output_classes)
+        self.metrics_custom = custom_metrics
         for m in custom_metrics:
             metrics.append(m)
 
+        self.metrics_names = None
         if output_classes>1:
             self.model.compile(
                   keras.optimizers.SGD(lr=0.01),
@@ -220,11 +229,15 @@ class res_net:
         
         self.metrics_train = []
         self.metrics_test = []
+        if self.metrics_names is None:
+            self.metrics_names = self.model.metrics_names
+#                self.metrics_names = ['loss'] + [m.__name__ for m in metrics]
+            
         if output_classes==1:
             self.metrics_true_ind = self._get_metric_ind('y_true_scaled')
         else:
             self.metrics_true_ind = self._get_metric_ind('y_true')
-        
+        print(self.metrics_names)
         
     def _to_array(self,single):
         #As in single value, not precision
@@ -306,11 +319,12 @@ class res_net:
         
         #print(y)
         #TODO: Check if it is possible to only update when the error values are small
+
         self.metrics_train.append(
                 self.model.train_on_batch(
                         x,y,sample_weight=None, class_weight=None)
                 )
-        
+            
         if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
             if self.verbose:
                 print('Saving checkpoint {}'.format(self.current_batch))
@@ -318,7 +332,7 @@ class res_net:
                 avgs = np.average(self.metrics_train[
                                 self.current_batch-self.checkpoint_frequency:
                                 self.current_batch],axis=0)
-                for idx,metric_name in enumerate(self.model.metrics_names[:-2]):
+                for idx,metric_name in enumerate(self.metrics_names[:-2]):
                     progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
                 print(progress_str)
                 
@@ -358,26 +372,40 @@ class res_net:
                 self.metrics_train[i][ind_pred] = int(self.metrics_train[i][ind_pred])
                 
     
-    def test(self,x,y):
+    def test(self,x,y, use_predict=False):
         """Wrapper for test_on_batch. Sample weights constant
-        Returns the scaled predicted value"""
+        Returns the scaled predicted value
+        params:
+            use_predict: if set to true the model will use predict_on_batch 
+                instead of train_on_batch. Does not affect logs. Can be useful
+                to circumvent batch size requirement in tests"""
         
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
         #print(y)
-        self.metrics_test.append(
-                self.model.test_on_batch(x, y, sample_weight=None)
-                )
+        if use_predict:
+            y_pred = self.model.predict_on_batch(x)
+            for i in range(y.shape[0]):
+                self.metrics_test.append([0,np.argmax(y_pred[i]),y[i]])
+#                self.metrics_test.append([m(x,sample) for m in self.metrics_custom])
+        else:
+            self.metrics_test.append(
+                    self.model.test_on_batch(x, y, sample_weight=None)
+                    )
         
         return self.metrics_test[-1][self.metrics_true_ind]
         
     def predict(self,x):
         """Calculates the output for input x"""
-        return self.__scale_activation_to_output(self.model.predict_on_batch(x))
+        y = self.model.predict_on_batch(x)
+        if self.output_classes == 1:
+            return self._scale_activation_to_output(y)
+        else:
+            return y
     
     def _get_metric_ind(self,metric_string):
-        for ind,m_name in enumerate(self.model.metrics_names):
+        for ind,m_name in enumerate(self.metrics_names):
             if metric_string==m_name:
                 break;
         else:
@@ -495,7 +523,7 @@ class res_net:
                         ma = [met[m] for met in metric]
                     plt.plot(ma)
                     plt.xlabel('Batch')
-                    plt.title(self.model.metrics_names[m] + ' - ' + title)
+                    plt.title(self.metrics_names[m] + ' - ' + title)
                 
                 plt.tight_layout()        
                 if title == 'training' and filename_training:

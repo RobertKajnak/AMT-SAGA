@@ -546,7 +546,7 @@ train_images,train_labels = sim_shuff(train_images,train_labels)
 test_images,test_labels = sim_shuff(test_images,test_labels)
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
-
+#%% Using train_on_batch
 rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              output_classes=10,
              convolutional_layer_count=convolutional_layer_count,
@@ -558,8 +558,8 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              verbose = False)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-#%% Using train_on_batch
-test_set_size = 1000
+
+test_set_size = 20000
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -571,7 +571,7 @@ pb = PB.ProgressBar(test_images.shape[0])
 for image,label in zip(test_images,test_labels):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
-    rn.test([expanded_image],expanded_label)
+    rn.test(expanded_image,expanded_label)
     pb.check_progress()
 
 rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
@@ -582,26 +582,59 @@ rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 #%% Using higher batch size
+batch_size = 32
 
+suffi =  '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
+         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
+         '_bs' + str(batch_size)
+         
+rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
+             output_classes=10,
+             batch_size=batch_size,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=pool_layer_frequency,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_prefix = 'checkpoint_' + suffix,
+             metrics=[],
+             verbose = False)
+rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-test_set_size = 1000
-pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
-batch_limit = 8
-current_batch = []
+test_set_size = 20000
+pb = PB.ProgressBar(test_set_size//8,sound='beep')#(train_images.shape[0])
+
+cb_x=np.zeros([0]+list(train_images.shape[1:]))
+cb_y=np.zeros([0]+list(train_labels.shape[1:]))
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
-    rn.train([expanded_image],expanded_label)
-    pb.check_progress()
+    if cb_x.shape[0]<batch_size:
+        cb_x=np.concatenate((cb_x,expanded_image))
+        cb_y=np.concatenate((cb_y,expanded_label))
+    else:
+        rn.train(cb_x,cb_y)
+        pb.check_progress()
+        cb_x=expanded_image
+        cb_y=expanded_label
     
-pb = PB.ProgressBar(test_images.shape[0])
-for image,label in zip(test_images,test_labels):
+test_set_size = 10000
+pb = PB.ProgressBar(test_set_size//8)
+cb_x=np.zeros([0]+list(train_images.shape[1:]))
+cb_y=np.zeros([0]+list(train_labels.shape[1:]))
+for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
-    rn.test([expanded_image],expanded_label)
-    pb.check_progress()
+    if cb_x.shape[0]<batch_size:
+        cb_x=np.concatenate((cb_x,expanded_image))
+        cb_y=np.concatenate((cb_y,expanded_label))
+    else:
+        rn.test(cb_x,cb_y,use_predict=True)
+        pb.check_progress()
+        cb_x=expanded_image
+        cb_y=expanded_label
 
-rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
+rn.report(training=False, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
           test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
 
