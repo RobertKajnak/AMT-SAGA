@@ -199,11 +199,14 @@ class audio_complete:
     def _seconds_to_frames(self,time):
         """Converts a from seconds to frames in fourier"""
 #        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
-        return librosa.core.time_to_frames(time,sr=self.sr, hop_length=self.hl, 
-                                           n_fft=self.N)
+        return max(0,librosa.core.time_to_frames(time,sr=self.sr, 
+                                                 hop_length=self.hl, 
+                                                 n_fft=self.N))
     
     def _frames_to_seconds(self,frames):
 #        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
+        if frames == 0:
+            return 0
         return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
                                            n_fft=self.N)
     

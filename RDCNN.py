@@ -237,7 +237,10 @@ class res_net:
             self.metrics_true_ind = self._get_metric_ind('y_true_scaled')
         else:
             self.metrics_true_ind = self._get_metric_ind('y_true')
-        print(self.metrics_names)
+            
+        if verbose:
+            print('Using metrics:')
+            print(self.metrics_names)
         
     def _to_array(self,single):
         #As in single value, not precision
@@ -319,7 +322,6 @@ class res_net:
         
         #print(y)
         #TODO: Check if it is possible to only update when the error values are small
-
         self.metrics_train.append(
                 self.model.train_on_batch(
                         x,y,sample_weight=None, class_weight=None)
@@ -406,7 +408,7 @@ class res_net:
         
     def predict(self,x):
         """Calculates the output for input x"""
-        y = self.model.predict_on_batch(x)
+        y = self.model.predict(x)
         if self.output_classes == 1:
             return self._scale_activation_to_output(y)
         else:
