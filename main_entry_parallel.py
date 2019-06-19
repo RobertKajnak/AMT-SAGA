@@ -10,8 +10,7 @@ Dataset: https://colinraffel.com/projects/lmd/
 import numpy as np
 import os
 import argparse
-from threading import Lock
-from multiprocessing import Pipe, Process, Value, Queue
+from multiprocessing import Process, Value, Queue, Lock, Pool
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -20,19 +19,20 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
-import ProgressBar as PB
+
 
 class Hyperparams:
-    def __init__(self, path, sf_path,
+    def __init__(self, path, sf_path, 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
-                 parallel_synth=False):
+                 batch_size = 8, worker_count =1,
+                 parallel_synth=False,parallel_train=False):
         self.N = N
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
         self.window_size_note_time = 6 if window_size_note_time is None else window_size_note_time
         self.pitch_input_shape = 20
         self.timing_input_shape = 258
-        self.batch_size = 8
+        self.batch_size = batch_size = batch_size
 
         self.kernel_sizes = [(32, 3), (32,3)]
         self.pool_sizes = [(5, 2), (5, 2)]
@@ -47,6 +47,8 @@ class Hyperparams:
         self.residual_layer_frequencies = [2]
 
         self.parallel_synth = parallel_synth
+        self.parallel_train = parallel_train
+        self.worker_count = worker_count
         self.path = path
         self.sf_path = sf_path
 
@@ -72,7 +74,10 @@ class note_sample:
         self.onset_s = onset_s
         self.duration_s = duration_s
 
-def thread_classification(model_name,params,q_samples, training_finished,DEBUG=False):
+def thread_classification(model_name,params,q_samples, training_finished, 
+                          training_lock = None,DEBUG=False):
+    i_b = 0
+    training_lock and training_lock.acquire()
     if model_name == 'pitch':
         if DEBUG:
             print('Loading Pitch Classifier')
@@ -83,41 +88,52 @@ def thread_classification(model_name,params,q_samples, training_finished,DEBUG=F
             print('Loading Instrument Classifier')
         model = InstrumentClassifier(params)
         model.plot_model(os.path.join(params.path,'model_meta','instrument'+'.png'))
+    training_lock and training_lock.release()
+#    onset_detector = OnsetDetector(params)
+#    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
+#    duration_detector = DurationDetector(params)
+#    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
 
     while training_finished.value == 0:
         sample = q_samples.get()
-        print('Starting {} Classification'.format(model_name))
+        training_lock and training_lock.acquire()
+        if DEBUG:
+            print('Starting {} Classification for Batch {}'.format(model_name,i_b))
+            i_b+=1
         model.classify(sample[0],sample[1])
+        training_lock and training_lock.release()
     
 
-def thread_training(samples_q, params,training_finished, DEBUG = False):
+def thread_training(samples_q, params,training_finished, 
+                    allow_parallel_training=False, DEBUG = False):
     if DEBUG:
         b_i=0
     
     #Technically pipes may be better, but the ease of use outweighs the 
     #performance penalty, especially compared to audio generation and training
-    
     q_pitch = Queue(1)
     q_inst = Queue(1)
+    if not allow_parallel_training:
+        training_lock = Lock()
+    else:
+        training_lock = None
     
     proc_pitch = Process(target=thread_classification, 
                             args=('pitch',params, q_pitch,
                                   training_finished,
-                                  DEBUG))
+                                  training_lock, DEBUG))
     proc_inst = Process(target=thread_classification, 
                         args=('instrument',params, q_inst,
                               training_finished,
-                              DEBUG))
+                              training_lock, DEBUG))
     proc_pitch.start()
     proc_inst.start()
     
     while training_finished.value == 0:
         pitch_x,pitch_y = [],[]
         instrument_x,instrument_y = [],[]
-#        print('Waiting for samples...')
         for i in range(params.batch_size):
             sample = samples_q.get()
-#            print('Sample {} processed'.format(i))
             pitch_x.append(sample.audio)
             pitch_y.append(sample.pitch)
             instrument_x.append(sample.audio)
@@ -131,23 +147,127 @@ def thread_training(samples_q, params,training_finished, DEBUG = False):
     
     proc_pitch.join()
     proc_inst.join()
+    
+def init_sample_aquisition(samples_q, synthesis_lock):
+    global samples_q_g
+    samples_q_g = samples_q
+    global synthesis_lock_g
+    synthesis_lock_g = synthesis_lock
 
-# noinspection PyShadowingNames
-def pre_train(params):
-    """ Prepare data, training and test"""
-    DEBUG = True
-    dm = util_dataset.DataManager(params.path, sets=['training', 'test'], types=['midi'])
-#    onset_detector = OnsetDetector(params)
-#    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
-#    duration_detector = DurationDetector(params)
-#    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
+def thread_sample_aquisition(filename,params, DEBUG=False):
+    fn = filename
 
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
+    
+
+    mid = note_sequence(fn[0])
+
+    
+#    if DEBUG:
+#        DEBUG = 1
+#    if DEBUG:
+#        audio_w_last = None
+    offset = 0
+
+    if DEBUG:
+        print('Generating wav for midi')
+    
+    params.parallel_synth or synthesis_lock_g.acquire()
+    mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
+    params.parallel_synth or synthesis_lock_g.release()
+    # TODO - Remove drums - hopefully it can learn to ignore it though
+    # TODO -  Add random instrument shifts
+    
+    if DEBUG:
+        print('Creating first cut')
+        
+    audio_w = mid_wf.section(offset, None, params.timing_input_shape)
+    notes_target, notes_w = relevant_notes(mid, offset, 
+                                           params.window_size_note_time)
+    while offset < mid.duration:
+
+        if DEBUG:
+#                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
+#                print('Saving to {}'.format(fn_base))
+#                if audio_w is not audio_w_last: #only print when new section emerges
+#                   audio_w.save(fn_base+'.flac')
+#                    if not params.parallel_synth:
+#                        synthesis_lock_g.acquire()
+##                   audio_complete(notes_target.render(params.sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
+#                   if not params.parallel_synth:
+#                        synthesis_lock_g.relese()     
+#                   audio_w_last = audio_w
+#                   notes_target.save(fn_base+'_target.mid')
+#                   notes_w.save(fn_base+'_inclusive.mid')
+            DEBUG += 1
+
+        note_gold = notes_target.pop(lowest=True, threshold=frametime)
+        # training
+        if note_gold is not None:
+            print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
+                  format(offset, note_gold.start_time,note_gold.end_time))
+            
+            onset_gold = note_gold.start_time
+            duration_gold = note_gold.end_time - note_gold.start_time
+            pitch_gold = note_gold.pitch
+            instrument_gold = note_gold.program
+        else:
+            onset_gold = offset + halfwindow_time
+
+        # use correct value to move window
+        if onset_gold >= halfwindow_time:                
+            offset += halfwindow_time
+            
+            audio_w_new = mid_wf.section(offset+halfwindow_time,
+                                         None, halfwindow_frames)
+            audio_w_new.mag # Evaluate mag to prime it for the NN. Efficiency trick
+            #Otherwise the F would be calculated for both
+            audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
+            audio_w.concat_power(audio_w_new)
+            
+            notes_target, notes_w = relevant_notes(mid, offset, 
+                                                   params.window_size_note_time)
+            continue
+
+        audio_sw = audio_w.resize(onset_gold, duration_gold, 
+                                  params.pitch_input_shape,
+                                  attribs=['mag','ph'])
+
+        sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
+                             onset_gold, duration_gold)
+
+
+#            samples_send.send(sample)            
+        samples_q_g.put(sample)
+        
+        # subtract correct note for training:
+        note_guessed = note_sequence()
+        note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold,
+                              0, duration_gold, velocity=100,
+                              is_drum=False)
+        
+        params.parallel_synth or synthesis_lock_g.acquire()
+        ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
+        params.parallel_synth or synthesis_lock_g.release()
+        audio_w.subtract(ac_note_guessed, offset=onset_gold)
+        
+#            if DEBUG:
+#                print(onset_gold)
+        #               ac_note_guessed.save(fn_base+'_guess.flac')
+#                note_last = note_gold
+
+# noinspection PyShadowingNames
+def pre_train(params,DEBUG):
+    """ Prepare data, training and test"""
+    dm = util_dataset.DataManager(params.path, sets=['training', 'test'], types=['midi'])
+
 
     if not params.parallel_synth:
         synthesis_lock = Lock()
+    else:
+        synthesis_lock = None
         
     samples_q = Queue(params.batch_size)
 
@@ -155,113 +275,21 @@ def pre_train(params):
     training_finished = Value('b',0)
     proc_training = Process(target=thread_training, args=(samples_q,params,
                                                           training_finished,
+                                                          params.parallel_train,
                                                           DEBUG))
     proc_training.start()
 
     dm.set_set('training') 
-    for fn in dm:
-        mid = note_sequence(fn[0])
-
-        
-        if DEBUG:
-            DEBUG = 1
-        if DEBUG:
-            audio_w_last = None
-        offset = 0
-
-        if DEBUG:
-            print('Generating wav for midi')
-        
-        if not params.parallel_synth:
-            synthesis_lock.acquire()
-        mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
-        if not params.parallel_synth:
-            synthesis_lock.release()
-        # TODO - Remove drums - hopefully it can learn to ignore it though
-        # TODO -  Add random instrument shifts
-        
-        if DEBUG:
-            print('Creating first cut')
-            
-        audio_w = mid_wf.section(offset, None, params.timing_input_shape)
-        notes_target, notes_w = relevant_notes(mid, offset, 
-                                               params.window_size_note_time)
-        while offset < mid.duration:
-
-            if DEBUG:
-#                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
-#                print('Saving to {}'.format(fn_base))
-#                if audio_w is not audio_w_last: #only print when new section emerges
-#                   audio_w.save(fn_base+'.flac')
-#                    if not params.parallel_synth:
-#                        synthesis_lock.acquire()
-##                   audio_complete(notes_target.render(params.sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
-#                   if not params.parallel_synth:
-#                        synthesis_lock.relese()     
-#                   audio_w_last = audio_w
-#                   notes_target.save(fn_base+'_target.mid')
-#                   notes_w.save(fn_base+'_inclusive.mid')
-                DEBUG += 1
-
-            note_gold = notes_target.pop(lowest=True, threshold=frametime)
-            # training
-            if note_gold is not None:
-                print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
-                      format(offset, note_gold.start_time,note_gold.end_time))
-                
-                onset_gold = note_gold.start_time
-                duration_gold = note_gold.end_time - note_gold.start_time
-                pitch_gold = note_gold.pitch
-                instrument_gold = note_gold.program
-            else:
-                onset_gold = offset + halfwindow_time
-
-            # use correct value to move window
-            if onset_gold >= halfwindow_time:                
-                offset += halfwindow_time
-                
-                audio_w_new = mid_wf.section(offset+halfwindow_time,
-                                             None, halfwindow_frames)
-                audio_w_new.mag # Evaluate mag to prime it for the NN. Efficiency trick
-                #Otherwise the F would be calculated for both
-                audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
-                audio_w.concat_power(audio_w_new)
-                
-                notes_target, notes_w = relevant_notes(mid, offset, 
-                                                       params.window_size_note_time)
-                continue
-
-            audio_sw = audio_w.resize(onset_gold, duration_gold, 
-                                      params.pitch_input_shape,
-                                      attribs=['mag','ph'])
-
-            sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
-                                 onset_gold, duration_gold)
-
-
-#            samples_send.send(sample)            
-            samples_q.put(sample)
-            
-            # subtract correct note for training:
-            note_guessed = note_sequence()
-            note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold,
-                                  0, duration_gold, velocity=100,
-                                  is_drum=False)
-            
-            if not params.parallel_synth:
-                synthesis_lock.acquire()
-            ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
-            if not params.parallel_synth:
-                synthesis_lock.release()
-            audio_w.subtract(ac_note_guessed, offset=onset_gold)
-            
-#            if DEBUG:
-#                print(onset_gold)
-            #               ac_note_guessed.save(fn_base+'_guess.flac')
-#                note_last = note_gold
- 
-
-
+    pool = Pool(processes = params.worker_count,
+                initializer=init_sample_aquisition,
+                initargs=(samples_q, synthesis_lock))  
+    
+    results = [pool.apply_async(thread_sample_aquisition, 
+                               args=(fn, params, DEBUG)
+                               ) for fn in dm ]
+    for result in results:
+        result.get()
+    training_finished.value = 1        
 
     proc_training.join()
 
@@ -275,21 +303,40 @@ if __name__ == '__main__':
                         default=os.path.join('.','data'),
                         help = 'The directory containing the files for training, \
                         testing etc.')
+    parser.add_argument('-batch_size',
+                        default=16,
+                        type=int,
+                        help = 'The batch size used in the training process. \
+                        Using a higher batch number on multi-core processors \
+                        may be useful.')
     parser.add_argument('-parsynth',
-                        default = False,
-                        help = 'Setting to true will let midi to audio \
+                        action='store_true',
+                        help = 'Specify to allow midi to audio \
                         synthesis be run in parallel. If the background service \
                         doesn\'t suppport it, it may cause unknown behaviour')
+    parser.add_argument('-partrain',
+                        action='store_true',
+                        help = 'Specifying to allow traing models in parallel. \
+                        This can cause instability or slowerperformance than \
+                        the sequential approach')
+    parser.add_argument('-silent',
+                        action='store_true',
+                        help = 'Do not display progress messages')
     args = vars(parser.parse_args())
     # Hyperparams
     path_data = args['data_path']
     path_sf = args['soundfont_path']
     par_synth = args['parsynth']
+    par_train = args['partrain']
+    batch_size = args['batch_size']
+    silent = args['silent']
     #mp.set_start_method('spawn')
-    p = Hyperparams(path_data, path_sf, parallel_synth = par_synth,
+    p = Hyperparams(path_data, path_sf, batch_size = batch_size,
+                    parallel_synth = par_synth, parallel_train=par_train,
+                    worker_count=1,
                     window_size_note_time=6)
 #    try:
-    pre_train(p)
+    pre_train(p, not silent)
 #    except KeyboardInterrupt:
 #        print("Keyboard Interrupted")
         
