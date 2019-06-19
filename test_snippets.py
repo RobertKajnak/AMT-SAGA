@@ -464,7 +464,7 @@ soundfile.write(path + 'wave_test_guess.flac', wf_guess, sr, format='flac', subt
 soundfile.write(path + 'wave_test_sub.flac', wf_sub, sr, format='flac', subtype='PCM_24')
 
 #%% Same thing, short version with the audio_util
-sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
 buckets = 4096
 
 #Generate notes
