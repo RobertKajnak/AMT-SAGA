@@ -5,16 +5,24 @@ Created on Sun Mar 24 17:05:15 2019
 @author: Hesiris
 """
 
-from magenta.music import midi_io
-from magenta.protobuf import music_pb2
-import librosa
 
-import soundfile
+import copy
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 from functools import reduce
 
-import copy
+from magenta.music import midi_io
+from magenta.protobuf import music_pb2
+import librosa
+import soundfile
+
+try:
+    import fluidsynth
+    _HAS_FLUIDSYNTH = True
+except ImportError:
+    _HAS_FLUIDSYNTH = False
 
 #https://www.midi.org/specifications-old/item/table-3-control-change-messages-data-bytes-2
 #http://people.csail.mit.edu/hubert/pyaudio/
@@ -372,9 +380,24 @@ class audio_complete:
 class note_sequence:
     #'D:/Soundfonts/HD.sf2'
     #'/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
-    def __init__(self, filename= None):
+    fl = None
+    sfid = None
+    sf_path = None
+    
+    _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
+             'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
+                 'B':11,'H':11}  
+    
+    def __init__(self, filename= None, sf2_path = None):
         """A wrapper class around the magenta midi wrapper that goes around pretty_midi
+        filename: The class will attampt to load the midi file in the specified filename
+        sf2_path: If the class is intended to be used for midi rendering,
+            The soundfont file can be loaded here. If left None, the file will
+            be loaded on first call to render. The soundfont file will be 
+            loaded and shared across all instances of the class. If a new 
+            filename is specified, the new one will be loaded.
         """
+        
         if filename is None:    
             self.sequence = music_pb2.NoteSequence()
             self.duration = 0
@@ -384,10 +407,10 @@ class note_sequence:
             self.duration = self.sequence.notes[-1].end_time
             self.start_first = self.sequence.notes[0].start_time
         self.prev_octave = 4
-            
-    _notes = {'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,
-             'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'Hb':10,
-                 'B':11,'H':11}  
+        
+        if sf2_path is not None:
+            note_sequence._init_fluidsynth(sf2_path,fs=44100)      
+            note_sequence.sf_path = sf2_path
         
     def clone(self):
         s_clone = note_sequence()
@@ -556,15 +579,31 @@ class note_sequence:
         """ Merges notes that are of the same instrument and are at least partially
         overlapping, i.e. start1"""
         
-        #For each instrument create a binary piano roll, check overlaps and 
+        #TODO For each instrument create a binary piano roll, check overlaps and 
         #modify notes accordingly
         pass
         
         
-    def render(self, soundfont_filename=None,max_duration = None,sample_rate=44100):
-        """Generate waveform for the stored sequence"""
+    def render(self, sf2_path=None, max_duration = None,sample_rate=44100):
+        """Generate waveform for the stored sequence
+        params:
+            sf2_path: needs to be specified on first run. To run without the 
+                ability to render set to None The soundfont file will be 
+                loaded and shared across all instances of the class. If a new 
+                filename is specified, the new one will be loaded.
+        """
+        
+        if note_sequence.fl is None or note_sequence.sfid is None:
+            if sf2_path is None:
+                raise ValueError("sf2_path needs to specified on first \
+                                 instance creation or class method \
+                                 _init_fluidsynth should be called first.")
+            elif note_sequence.sf_path != sf2_path:
+                note_sequence._init_fluidsynth(sf2_path,fs=44100)
+                note_sequence.sf_path = sf2_path
+                
         mid = midi_io.note_sequence_to_pretty_midi(self.sequence)
-        wf = mid.fluidsynth(fs=sample_rate, sf2_path=soundfont_filename)
+        wf = self._fluidsynth_midi_stateful(mid, fs=sample_rate)
         
         if max_duration is None:
             return wf
@@ -576,7 +615,146 @@ class note_sequence:
     def save(self,file_name):
         '''Saves the MIDi file to the specified filename'''
         midi_io.note_sequence_to_midi_file(self.sequence, file_name)
+        
+    @classmethod
+    def _init_fluidsynth(cls,sf2_path,fs=44100):
+        """ Initializes fluidsynth object and adds loads the soundfont. 
+            If a soundfont is already present, the old one is discarded.
+        """
+        if not _HAS_FLUIDSYNTH:
+            raise ImportError("fluidsynth() was called but pyfluidsynth "
+                              "is not installed.")
+
+        if not os.path.exists(sf2_path):
+            raise ValueError("No soundfont file found at the supplied path "
+                             "{}".format(sf2_path))
+            
+        if cls.fl is not None:
+            cls._close_fluidsynth()
+        # Create fluidsynth instance
+        cls.fl = fluidsynth.Synth(samplerate=fs)
+        # Load in the soundfont
+        cls.sfid = cls.fl.sfload(sf2_path)
+        
+    @classmethod
+    def _close_fluidsynth(cls):
+        """Close fluidsynth"""
+        cls.fl.delete()
+        
+    def _fluidsynth_instrument_stateful(self,instrument_preddy_midi, fs=44100):
+        """Taken from github.com/craffel/pretty-midi/ 
+        The key change is that sf2_path can now be a loaded file, 
+        thus reducing disk load. Default file load removed.
+        
+        def fluidsynth(self, fs=44100, sf2_path=None):
+        Synthesize using fluidsynth.
+        Parameters
+        ----------
+        intrument_pretty_midi: object
+            instnce of the pretty_midi_instrument
+        fs : int
+            Sampling rate to synthesize.
+        Returns
+        -------
+        synthesized : np.ndarray
+            Waveform of the MIDI data, synthesized at ``fs``.
+        """
+
+        # If the instrument has no notes, return an empty array
+        if len(instrument_preddy_midi.notes) == 0:
+            return np.array([])
+
+
+        if instrument_preddy_midi.is_drum:
+            channel = 9
+            # Try to use the supplied program number
+            res = note_sequence.fl.program_select(channel, note_sequence.sfid, 128, instrument_preddy_midi.program)
+            # If the result is -1, there's no preset with this program number
+            if res == -1:
+                # So use preset 0
+                note_sequence.fl.program_select(channel, note_sequence.sfid, 128, 0)
+        # Otherwise just use channel 0
+        else:
+            channel = 0
+            note_sequence.fl.program_select(channel, note_sequence.sfid, 0, instrument_preddy_midi.program)
+        # Collect all notes in one list
+        event_list = []
+        for note in instrument_preddy_midi.notes:
+            event_list += [[note.start, 'note on', note.pitch, note.velocity]]
+            event_list += [[note.end, 'note off', note.pitch]]
+        for bend in instrument_preddy_midi.pitch_bends:
+            event_list += [[bend.time, 'pitch bend', bend.pitch]]
+        for control_change in instrument_preddy_midi.control_changes:
+            event_list += [[control_change.time, 'control change',
+                            control_change.number, control_change.value]]
+        # Sort the event list by time, and secondarily by whether the event
+        # is a note off
+        event_list.sort(key=lambda x: (x[0], x[1] != 'note off'))
+        # Add some silence at the beginning according to the time of the first
+        # event
+        current_time = event_list[0][0]
+        # Convert absolute seconds to relative samples
+        next_event_times = [e[0] for e in event_list[1:]]
+        for event, end in zip(event_list[:-1], next_event_times):
+            event[0] = end - event[0]
+        # Include 1 second of silence at the end
+        event_list[-1][0] = 1.
+        # Pre-allocate output array
+        total_time = current_time + np.sum([e[0] for e in event_list])
+        synthesized = np.zeros(int(np.ceil(fs*total_time)))
+        # Iterate over all events
+        for event in event_list:
+            # Process events based on type
+            if event[1] == 'note on':
+                note_sequence.fl.noteon(channel, event[2], event[3])
+            elif event[1] == 'note off':
+                note_sequence.fl.noteoff(channel, event[2])
+            elif event[1] == 'pitch bend':
+                note_sequence.fl.pitch_bend(channel, event[2])
+            elif event[1] == 'control change':
+                note_sequence.fl.cc(channel, event[2], event[3])
+            # Add in these samples
+            current_sample = int(fs*current_time)
+            end = int(fs*(current_time + event[0]))
+            samples = note_sequence.fl.get_samples(end - current_sample)[::2]
+            synthesized[current_sample:end] += samples
+            # Increment the current sample
+            current_time += event[0]
+
+        return synthesized
     
+    def _fluidsynth_midi_stateful(self, midi_object, fs=44100):
+        """Synthesize using fluidsynth.
+        Parameters
+        ----------
+        fs : int
+            Sampling rate to synthesize at.
+        sf2_path : str
+            Path to a .sf2 file.
+            Default ``None``, which uses the TimGM6mb.sf2 file included with
+            ``pretty_midi``.
+        Returns
+        -------
+        synthesized : np.ndarray
+            Waveform of the MIDI data, synthesized at ``fs``.
+        """
+        # If there are no instruments, or all instruments have no notes, return
+        # an empty array
+        if len(midi_object.instruments) == 0 or all(len(i.notes) == 0
+                                             for i in midi_object.instruments):
+            return np.array([])
+        # Get synthesized waveform for each instrument
+        waveforms = [self._fluidsynth_instrument_stateful(i,fs=fs,
+                                  ) for i in midi_object.instruments]
+        
+        # Allocate output waveform, with #sample = max length of all waveforms
+        synthesized = np.zeros(np.max([w.shape[0] for w in waveforms]))
+        # Sum all waveforms in
+        for waveform in waveforms:
+            synthesized[:waveform.shape[0]] += waveform
+        # Normalize
+        synthesized /= np.abs(synthesized).max()
+        return synthesized
         
 def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
     """ Plots a list of spectrograms or entities

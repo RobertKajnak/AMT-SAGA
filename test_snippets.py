@@ -391,7 +391,7 @@ sequence.save(path+output_file_name)
 # Generate a sustained G major chord for a whole note with a C, one octave lower for a half in the middle
 from magenta.music import midi_io
 sr = 44100
-sf_path = '/home/hesiris/Documents/Thesis/GM_soundfonts.sf2'
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
 
 ns = nsequence()
 ns.add_note(0,0,67,start=0,end=2)
@@ -468,7 +468,7 @@ sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
 buckets = 4096
 
 #Generate notes
-ns = nsequence()
+ns = nsequence(sf2_path = sf_path)
 ns.add_note(0,0,'G4',start=0,end=2)
 ns.add_note(0,0,'b',start=0,end=2)
 ns.add_note(0,0,'D5',start=0,end=2)
@@ -476,13 +476,13 @@ ns.add_note(0,0,'D5',start=0,end=2)
 ns.add_note(0,0,'C3',start=0.5,end=1.5)
 
 #Generate wave and spectral representations
-wf = ns.render(sf_path)
+wf = ns.render()
 ac = util_audio.audio_complete(wf,buckets)
 
 #same for the C only
 guess = nsequence()
 guess.add_note(0,0,48,0,1)
-ac_guess = util_audio.audio_complete(guess.render(sf_path),buckets)
+ac_guess = util_audio.audio_complete(guess.render(),buckets)
 
 #Subtract. Create a copy to plot later
 ac_sub = ac.clone()
