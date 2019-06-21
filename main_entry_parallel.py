@@ -24,8 +24,8 @@ from util_audio import audio_complete
 class Hyperparams:
     def __init__(self, path, sf_path, 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
-                 batch_size = 8, worker_count =1,
-                 parallel_synth=False,parallel_train=False):
+                 batch_size = 8, synth_worker_count =1,
+                 parallel_train=False):
         self.N = N
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
@@ -46,9 +46,8 @@ class Hyperparams:
         self.feature_expand_frequency = 12  # pool_layer_frequency
         self.residual_layer_frequencies = [2]
 
-        self.parallel_synth = parallel_synth
         self.parallel_train = parallel_train
-        self.worker_count = worker_count
+        self.synth_worker_count = synth_worker_count
         self.path = path
         self.sf_path = sf_path
 
@@ -148,11 +147,9 @@ def thread_training(samples_q, params,training_finished,
     proc_pitch.join()
     proc_inst.join()
     
-def init_sample_aquisition(samples_q, synthesis_lock):
+def init_sample_aquisition(samples_q):
     global samples_q_g
     samples_q_g = samples_q
-    global synthesis_lock_g
-    synthesis_lock_g = synthesis_lock
 
 def thread_sample_aquisition(filename,params, DEBUG=False):
     fn = filename
@@ -172,36 +169,27 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
     offset = 0
 
     if DEBUG:
-        print('Generating wav for midi')
+        print('Generating wav for midi {}'.format(fn))
     
-    params.parallel_synth or synthesis_lock_g.acquire()
-    mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
-    params.parallel_synth or synthesis_lock_g.release()
+    mid_wf = audio_complete(mid.render(), params.N - 2)
     # TODO - Remove drums - hopefully it can learn to ignore it though
     # TODO -  Add random instrument shifts
-    
-    if DEBUG:
-        print('Creating first cut')
-        
+            
     audio_w = mid_wf.section(offset, None, params.timing_input_shape)
     notes_target, notes_w = relevant_notes(mid, offset, 
                                            params.window_size_note_time)
     while offset < mid.duration:
 
-        if DEBUG:
+#        if DEBUG:
 #                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
 #                print('Saving to {}'.format(fn_base))
 #                if audio_w is not audio_w_last: #only print when new section emerges
 #                   audio_w.save(fn_base+'.flac')
-#                    if not params.parallel_synth:
-#                        synthesis_lock_g.acquire()
-##                   audio_complete(notes_target.render(params.sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
-#                   if not params.parallel_synth:
-#                        synthesis_lock_g.relese()     
+##                   audio_complete(notes_target.render(),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended     
 #                   audio_w_last = audio_w
 #                   notes_target.save(fn_base+'_target.mid')
 #                   notes_w.save(fn_base+'_inclusive.mid')
-            DEBUG += 1
+#            DEBUG += 1
 
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         # training
@@ -237,9 +225,7 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
 
         sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
-
-
-#            samples_send.send(sample)            
+   
         samples_q_g.put(sample)
         
         # subtract correct note for training:
@@ -248,9 +234,7 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
                               0, duration_gold, velocity=100,
                               is_drum=False)
         
-        params.parallel_synth or synthesis_lock_g.acquire()
-        ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
-        params.parallel_synth or synthesis_lock_g.release()
+        ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
         audio_w.subtract(ac_note_guessed, offset=onset_gold)
         
 #            if DEBUG:
@@ -262,12 +246,6 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
 def pre_train(params,DEBUG):
     """ Prepare data, training and test"""
     dm = util_dataset.DataManager(params.path, sets=['training', 'test'], types=['midi'])
-
-
-    if not params.parallel_synth:
-        synthesis_lock = Lock()
-    else:
-        synthesis_lock = None
         
     samples_q = Queue(params.batch_size)
 
@@ -279,10 +257,13 @@ def pre_train(params,DEBUG):
                                                           DEBUG))
     proc_training.start()
 
+    #Pre-loading sounfont here means that threads don't use the memory separately
+    #And other tests have shown that it is thread-safe
+    note_sequence(sf2_path = params.sf_path) 
     dm.set_set('training') 
-    pool = Pool(processes = params.worker_count,
+    pool = Pool(processes = params.synth_worker_count,
                 initializer=init_sample_aquisition,
-                initargs=(samples_q, synthesis_lock))  
+                initargs=(samples_q,))  
     
     results = [pool.apply_async(thread_sample_aquisition, 
                                args=(fn, params, DEBUG)
@@ -304,18 +285,22 @@ if __name__ == '__main__':
                         help = 'The directory containing the files for training, \
                         testing etc.')
     parser.add_argument('-batch_size',
-                        default=16,
+                        default=8,
                         type=int,
                         help = 'The batch size used in the training process. \
                         Using a higher batch number on multi-core processors \
                         may be useful.')
-    parser.add_argument('-parsynth',
-                        action='store_true',
-                        help = 'Specify to allow midi to audio \
-                        synthesis be run in parallel. If the background service \
-                        doesn\'t suppport it, it may cause unknown behaviour')
+    parser.add_argument('-synth_workers',
+                        default = 2,
+                        type = int,
+                        help = 'Number of threads that will be used for \
+                        midi->wav generation. This is most likely not the\
+                        bottleneck, a number of 2 is optimal for avoiding \
+                        the longer synthesis at the end of the song taking up \
+                        too much time. In case there are audio glitches try \
+                        a worker count of 1.')
     parser.add_argument('-partrain',
-                        action='store_true',
+                        action = 'store_true',
                         help = 'Specifying to allow traing models in parallel. \
                         This can cause instability or slowerperformance than \
                         the sequential approach')
@@ -323,17 +308,17 @@ if __name__ == '__main__':
                         action='store_true',
                         help = 'Do not display progress messages')
     args = vars(parser.parse_args())
-    # Hyperparams
+    # Command line args and hyperparms
     path_data = args['data_path']
     path_sf = args['soundfont_path']
-    par_synth = args['parsynth']
+    synth_workers = args['synth_workers']
     par_train = args['partrain']
     batch_size = args['batch_size']
     silent = args['silent']
     #mp.set_start_method('spawn')
     p = Hyperparams(path_data, path_sf, batch_size = batch_size,
-                    parallel_synth = par_synth, parallel_train=par_train,
-                    worker_count=1,
+                    parallel_train=par_train,
+                    synth_worker_count=synth_workers,
                     window_size_note_time=6)
 #    try:
     pre_train(p, not silent)
