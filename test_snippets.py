@@ -518,17 +518,12 @@ residual_layer_frequencies = [2]
     
     #TO test: -residuals -dualchannel -two_fc_at_the_end
 
-suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
-         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
-                '_1_input_10k_samples'
-
 fashion_mnist = keras.datasets.fashion_mnist
 class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 
                'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
 
 (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 print('Loaded {} images with shape: {}'.format(train_images.shape[0],train_images.shape[1:]))
-print('Suffix used: ' + suffix)
  
 train_images = train_images / (255.0/2)-1
 test_images = test_images / (255.0/2)-1
@@ -547,19 +542,24 @@ test_images,test_labels = sim_shuff(test_images,test_labels)
 #train_labels = keras.utils.to_categorical(train_labels,10)
 #test_labels = keras.utils.to_categorical(test_labels,10)
 #%% Using train_on_batch
+suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
+         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
+                '_checkpoint_verif'
+print('Suffix used: ' + suffix)
+
 rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              output_classes=10,
              convolutional_layer_count=convolutional_layer_count,
              pool_layer_frequency=pool_layer_frequency,
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
-             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 200,
              checkpoint_prefix = 'checkpoint_' + suffix,
-             verbose = False)
+             verbose = True)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 
-test_set_size = 2500
+test_set_size = 3000
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -567,8 +567,9 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
     rn.train([expanded_image],expanded_label)
     pb.check_progress()
     
-pb = PB.ProgressBar(test_images.shape[0])
-for image,label in zip(test_images,test_labels):
+test_set_size = 2000
+pb = PB.ProgressBar(test_set_size)
+for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
     expanded_label = np.expand_dims(label,axis=0)
     rn.test(expanded_image,expanded_label)
@@ -581,6 +582,33 @@ rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suf
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
+#%% Verify correct checkpointing
+checkpoint_idx = 2000
+fn_weights = ('./data/checkpoints/200/'
+            'checkpoint__16_6_6_[2]_checkpoint_verif_{}.h5').format(checkpoint_idx)
+            
+rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
+             output_classes=10,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=pool_layer_frequency,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= './data/checkpoints/200', checkpoint_frequency = 200,
+             checkpoint_prefix = 'checkpoint_' + suffix,
+             verbose = True,
+             weights_load_checkpoint_filename=fn_weights)
+
+test_set_size = 2000
+pb = PB.ProgressBar(test_set_size)
+for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test(expanded_image,expanded_label)
+    pb.check_progress()
+    
+rn.report(test = True, filename_test= fn_weights + '.csv', 
+          class_names = class_names)
+
 #%% Using higher batch size
 batch_size = 16
 
@@ -595,13 +623,17 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              pool_layer_frequency=pool_layer_frequency,
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
-             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_dir= './data/checkpoints/200/', checkpoint_frequency = 200,
              checkpoint_prefix = 'checkpoint_' + suffix,
              metrics=['sparse_categorical_accuracy'],
-             verbose = False)
+             verbose = True)
+oname = str(rn.model.optimizer)
+oname = oname[oname.find('optimizers')+11:oname.find('object')-1]
+suffix += '_' + oname
+
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-test_set_size = 20000
+test_set_size = 10000
 pb = PB.ProgressBar(test_set_size//batch_size,sound='beep')#(train_images.shape[0])
 
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
@@ -618,7 +650,7 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
         cb_x=expanded_image
         cb_y=expanded_label
     
-test_set_size = 10000
+test_set_size = 5000
 pb = PB.ProgressBar(test_set_size//batch_size)
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
 cb_y=np.zeros([0]+list(train_labels.shape[1:]))
@@ -638,7 +670,7 @@ rn.report(training=False, filename_training=os.path.join(res_dir,'training' + su
           test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
 
-rn.plot(metrics_to_plot=[0,1,2,3],moving_average_window=100,
+rn.plot(metrics_to_plot=[0,1,2,3],moving_average_window=20,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 
