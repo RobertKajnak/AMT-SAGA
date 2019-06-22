@@ -14,7 +14,6 @@ from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 from tensorflow import keras
 import os
-import ipdb
 
 # Helper libraries
 import numpy as np
@@ -25,8 +24,6 @@ import csv
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.metrics import get as get_metric_by_name
-
-from tensorflow.keras.losses import sparse_categorical_crossentropy
 
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Activation
@@ -66,37 +63,49 @@ class res_net:
                  verbose = True):
         '''Residual net
         params:    
-            input_shapes: the input shape of the separate input channels. The default value uses two channels.
+            input_shapes: the input shape of the separate input channels. 
+                The default value uses two channels.
                 For a single channel use [(n,m,1)]
-            output_classes: the number of output classes. specifying a value of 1 will change the network to use a
-                single output with sigmoid/MSE loss instead of softmax/cross entropy
-            output_range: if the output classes are classified as 1, this is used
-                to scale the output from this domain to to the appropriate values
+            output_classes: the number of output classes. specifying a value 
+                of 1 will change the network to use a single output with 
+                sigmoid/MSE loss instead of softmax/cross entropy
+            output_range: if the output classes are classified as 1, this is 
+                used to scale the output from this domain to to the 
+                appropriate values
 
             pool_size: pooling sizes, in the same order as the input channles.
                 If a single channel is present use [(n,m)]
             kernel_sizes: kernel sizes in the same order as the input channles.
                 If a single channel is present use [(n,m)]
 
-            convolutional_layer_count: total number of convolutional layers in the network, not counting size scaling
-                for the residual layers and similar layers
-            feature_expand_frequency: the frequency at which the number of features are doubled.
-                E.g. for convolutional_layer_count==5 and feature_expand_frequency==2 the feature sizes will be
+            convolutional_layer_count: total number of convolutional layers 
+                in the network, not counting size scaling for the residual 
+                layers and similar layers
+            feature_expand_frequency: the frequency at which the number of 
+                features are doubled. E.g. for convolutional_layer_count==5 
+                and feature_expand_frequency==2 the feature sizes will be
                 32-32-64-64-128
-            pool_layer_frequency: the frequency at which the pooling layers are inserted.
-                Same logic as feature_expand_frequency. The pool layers are inserted BEFORE the feature expansion
-            residual_layer_frequencies: the frequency at which the the residual shortcuts are insterted.
-                Multiple frequencies can be specified e.g. [2,4] will insert a shortcut between every 2nd layer and
-                separately also between every 4th
-            metrics: the metrics to use. See Keras documentation
+            pool_layer_frequency: the frequency at which the pooling layers 
+                are inserted. Same logic as feature_expand_frequency. The 
+                pool layers are inserted BEFORE the feature expansion
+            residual_layer_frequencies: the frequency at which the the 
+                residual shortcuts are insterted. Multiple frequencies can be 
+                specified e.g. [2,4] will insert a shortcut between every 
+                2nd layer and separately also between every 4th
+            metrics: the metrics to use. See Keras documentation. 
+                Use full name, aliases may not work
             
-            checkpoint_dir: The directory to save checkpoints to. If set to none,
-                no operation will be performed
-            checkpoint_prefix: The filename for checkpoints. E.g. a prefix ='foo' will
-                yield filenames of 'foo_1000.h5', 'foo_2000.h5' etc.
-            checkpoint_frequency: the model weights will be saved every nth batch
-            weights_load_checkpoint_filename: weights will be attempted to be imported from this file
-            starting_checkpoint_index: specify this to continue couning from a previous point
+            checkpoint_dir: The directory to save checkpoints to. If set to 
+                none, no operation will be performed
+            checkpoint_prefix: The filename for checkpoints. 
+                E.g. a prefix ='foo' will yield filenames of 
+                'foo_1000.h5', 'foo_2000.h5' etc.
+            checkpoint_frequency: the model weights will be saved every 
+                nth batch
+            weights_load_checkpoint_filename: weights will be attempted to be
+                imported from this file
+            starting_checkpoint_index: specify this to continue batch 
+                numbering from a previous point
         '''
         self.batch_size = batch_size
         activation_fuction = 'sigmoid'
@@ -216,7 +225,7 @@ class res_net:
         
         if weights_load_checkpoint_filename is not None:
             if verbose:
-                print('Loading Weights...')
+                print('Loading Weights from {}'.format(weights_load_checkpoint_filename))
             self.load_weights(weights_load_checkpoint_filename)
             
         self.checkpoint_dir = checkpoint_dir
@@ -246,7 +255,9 @@ class res_net:
             print('Optimizer: ' + oname)
         
     def _to_array(self,single):
-        #As in single value, not precision
+        """Converts a single value (e.g. int, float, str) into an array 
+        containing only that value. E.g. str-> [str]"""
+        
         if single is None:
             single = []
         else:
@@ -267,7 +278,14 @@ class res_net:
         return ((x-self.out_func_min)/self.out_func_factor) * \
                 self.out_val_factor+self.out_val_min
     
-    def _add_shortcut(self,layer_from,layer_to):    
+    def _add_shortcut(self,layer_from,layer_to):
+        """Creates a shortcut between the two layers. 
+        Layers with differing shapes can be added. For smaller layers, average
+        pooling will be used, for bigger ones, values will be duplicated
+        Roughly follows Deep Residual Learning for Image Recognition by
+        Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
+
+        """
         sh1 = [np.int(layer_from.shape[1]),np.int(layer_from.shape[2]),np.int(layer_from.shape[3])]#layer_from.shape[1:]
         sh2 = [np.int(layer_to.shape[1]),np.int(layer_to.shape[2]),np.int(layer_to.shape[3])]
         if sh1==sh2:
@@ -286,6 +304,8 @@ class res_net:
             return Add()([intermediate,layer_to])
             
     def _define_metrics(self,output_classes):
+        """Returs some pre-determined basic metrics, depending on wether 
+        the output is categorical or numerical"""
         if output_classes>1:
             def y_pred(y_true, y_pred):
                 return keras.backend.argmax(y_pred)           
@@ -350,6 +370,7 @@ class res_net:
         return self.metrics_train[-1][self.metrics_true_ind]
     
     class _fit_metrics(Callback):
+        """For use with fit_generator"""
         def on_train_begin(self, logs={}):
             self.metrics_all = []
         def on_batch_end(self, batch, logs={}):
@@ -358,6 +379,8 @@ class res_net:
     
     def fit_generator(self,generator,steps_per_epoch,
                       epochs=1,workers=1,use_multiprocessing=False):
+        """ Starts training using a generator provided
+        """
         #TODO: ADD Checkpointing
         fit_metrics = self._fit_metrics()
         self.model.fit_generator(generator, steps_per_epoch=steps_per_epoch,
@@ -418,6 +441,7 @@ class res_net:
             return y
     
     def _get_metric_ind(self,metric_string):
+        """Return the index (in the name list) of the metric requested"""
         for ind,m_name in enumerate(self.metrics_names):
             if metric_string==m_name:
                 break;
@@ -547,19 +571,15 @@ class res_net:
             
         
     def load_weights(self,filename):
+        """Replaces current weights with the ones in the file specified.
+            Should be an hd5 file, created by the checkpointing part.
+            Class should still be defined using the correct parameters."""
         self.model.load_weights(filename)
         
     def plot_model(self,to_file='model.png'):
+        """Plots the structure of the model. If filename is specified, it is
+        also saved to a the specified path/filename"""
         keras.utils.plot_model(self.model,to_file, show_layer_names=False,
                                show_shapes=True)#, dpi=140)
-        
-    def show_image(self):
-        plt.figure()
-        plt.imshow(self.train_images[0])
-        plt.colorbar()
-        plt.grid(False)
-        plt.show()
-        
-
-        
+               
     
