@@ -204,12 +204,12 @@ class res_net:
         self.metrics_names = None
         if output_classes>1:
             self.model.compile(
-                  keras.optimizers.SGD(lr=0.01),
+                  keras.optimizers.Adagrad(),
                   loss='sparse_categorical_crossentropy',
                   metrics=metrics)
         else:
             self.model.compile(
-                  keras.optimizers.SGD(lr=0.01),
+                  keras.optimizers.Adagrad(),
                   loss='mean_squared_error',
                   metrics=metrics)
 
@@ -241,6 +241,9 @@ class res_net:
         if verbose:
             print('Using metrics:')
             print(self.metrics_names)
+            oname = str(self.model.optimizer)
+            oname = oname[oname.find('optimizers')+11:oname.find('object')-1]
+            print('Optimizer: ' + oname)
         
     def _to_array(self,single):
         #As in single value, not precision
