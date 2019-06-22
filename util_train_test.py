@@ -27,7 +27,7 @@ class Hyperparams:
 #        self.pool_sizes_pitch = [(2, 5), (2, 5)]
 
         self.checkpoint_dir = './data/checkpoints'
-        self.checkpoint_frequency = 5000
+        self.checkpoint_frequency = 200
         self.convolutional_layer_count = 33
         self.pool_layer_frequency = 12
         self.feature_expand_frequency = 12  # pool_layer_frequency
@@ -37,13 +37,14 @@ class Hyperparams:
         self.synth_worker_count = synth_worker_count
         self.path = path
         self.sf_path = sf_path
+        
+
 
 def relevant_notes(sequence, offset, duration):
     notes_w, notes_target = sequence.get_notes(offset, offset + duration)
     minus = notes_w.start_first
 
     notes_w = notes_w.clone()
-    print(offset, minus)
 
     notes_target = notes_target.clone()
     notes_target.shift(-offset)
