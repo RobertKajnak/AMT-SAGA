@@ -30,6 +30,27 @@ except ImportError:
 
 class audio_complete:
     def __init__(self,waveform,n_fft,hop_length=None,center=True,sample_rate=44100):
+        """ A Class that holds both waveform and spectral information. 
+            This provides a lighweight wrapper around the librosa library and
+            provides some additional functionality.
+            
+            All properties are claculated only when called. If a property is 
+            modified any other property that becomes out of synch with the new
+            information is removed and recalculated when the respective 
+            property is called.
+            params:
+                waveform: Can be set to None, if only spectral information is
+                    intended to be used later.
+                n_fft: Fast Furier Transform window size
+                hop_length: number audio of frames between STFT columns. 
+                    If unspecified, defaults win_length / 4.
+                center: If True, the signal y is padded so that frame D[:, t] 
+                    is centered at y[t * hop_length].
+                    If False, then D[:, t] begins at y[t * hop_length]
+                sample_rate: sample rate of the waveform
+                
+            For more information visit librosa.github.io
+        """
         self._wf = waveform
         self._F = None
         self._mag = None
@@ -44,10 +65,24 @@ class audio_complete:
         
         
     def clone(self):
-        """Copies the parameters and a deepcopy of the waveform"""
-        return audio_complete(copy.deepcopy(self.wf),self.N,self.hl,self.sr)
-    
-    
+        """Copies the parameters and a deepcopy of the available properties"""
+        wf = copy.deepcopy(self._wf)
+        ac = audio_complete(wf, sample_rate = self.sr, n_fft = self.N,
+                              center = self.center, hop_length = self.hl)
+        
+        F = copy.deepcopy(self._F)
+        mag = copy.deepcopy(self._mag)
+        ref_mag = self._ref_mag
+        ph = copy.deepcopy(self._ph)
+        D = copy.deepcopy(self._D)
+           
+        ac._F = F
+        ac._mag = mag
+        ac._ref_mag = ref_mag
+        ac._ph = ph
+        ac._D = D
+        
+        return ac
     @property
     def wf(self):
         if self._wf is None:
@@ -165,7 +200,8 @@ class audio_complete:
     
     def subtract(self,subtrahend, offset=0,attack_compensation=0,
                      normalize = True, relu = True, overkill_factor = 1):
-        """ self is the minuend and the subtrahend is provided
+        """ Subtracts the magnitude information of the provided subtrahend from
+            the current class' information. 
             params:
                 subtrahend: It can be either of the same class or a magnitude
                 offset: offset expressed in seconds
@@ -175,8 +211,6 @@ class audio_complete:
                 relu: values below 0 are set to 0 on the result
                 overkill_factor: the sutrahend is multiplied by this value to increase it's effect
                     it is adviseable to also set 'relu=True'
-                
-                
         """
         
         if isinstance(subtrahend,type(self)):
@@ -205,28 +239,31 @@ class audio_complete:
             self.mag = np.maximum(self.mag,0,self.mag)
         
     def _seconds_to_frames(self,time):
-        """Converts a from seconds to frames in fourier"""
+        """Converts a from seconds to frames in fourier. Window is compensated,
+            but a value of 0 always returns 0"""
 #        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
         return max(0,librosa.core.time_to_frames(time,sr=self.sr, 
                                                  hop_length=self.hl, 
                                                  n_fft=self.N))
     
     def _frames_to_seconds(self,frames):
+        """Converts a from fourier frames to seconds. Window is compensated,
+            but a value of 0 always returns 0"""
 #        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
         if frames == 0:
             return 0
         return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
                                            n_fft=self.N)
     
-    def section(self, start,end, duration_in_frames=None):
-        """Creates a copy of a section and returns it. The D, F et.c will remain calculated
-        Start and end specified in seconds. They will be rounded down to the nearest
-        Fourier frame. If duration in frames is specifies, it overrides the end time specification.
-        If the section specified is bigger than the array, the remainder is padded with 0s
+    def section(self, start, end, duration_in_frames=None):
+        """Creates a copy of a section and returns it. The D, F et.c will 
+        remain calculated. If the section specified is bigger than the array, 
+        the remainder is padded with 0s
         params:
-            start: start time in seconds
-            end: end time in seconds
-            duration_in_frames: duration of the slice, expressed in frames. Overwrites end"""
+            start: start time in seconds, rounded down to the nearest Fourier frame
+            end: end time in seconds, rounded down to the nearest Fourier frame
+            duration_in_frames: duration of the slice, expressed in frames. 
+                Overwrites end time if speicified"""
         tfs = self._seconds_to_frames(start)
         if duration_in_frames is None:
             tfe = self._seconds_to_frames(end)
@@ -287,7 +324,7 @@ class audio_complete:
     
     def concat_power(self,ac):
         """Concatenates two ac's. Waveform not calculated
-        The data is not copied, no warranty is provided"""
+        The data is not copied"""
         
         self._wf = None        
         self._F = self._concus(self._F,ac._F)
@@ -299,6 +336,7 @@ class audio_complete:
             self._F = self._concus(self.F,ac.F)
 
     def _resize(self,P,target_frame_count):
+        """Generic funciton to resize any property"""
         t = P.shape[1]
         
         if t==0:
@@ -324,9 +362,9 @@ class audio_complete:
         return resd
 
     def resize(self,start,duration,target_frame_count, attribs=['F']):
-        """ A new ac is returned that has a single data attribute set, specified
-            as a parameter. Hyperparameters copied. ref_mag copied if available.
-            Does not modify the instance content.
+        """ A new ac is returned that has a single data attribute set, 
+            specified as a parameter. Hyperparameters copied. ref_mag copied 
+            if available. Does not modify the instance content.
             params:
                 start: start time in seconds for the subsection
                 duration: duration in seconds of the subsection. Can be larger,
@@ -364,6 +402,7 @@ class audio_complete:
         return nac
         
     def plot_spec(self,width=12,height = 5):
+        "Plots the logarithmic spectrogram. Caclutes D if unavailable."""
         
         plt.figure(figsize=(width, height))
 
@@ -373,6 +412,7 @@ class audio_complete:
         plt.colorbar(format='%+2.0f dB')
 
     def save(self,filename):
+        """Saves the waveform to the specified flac filename with FLAC codec"""
         audio_to_flac(waveform = self.wf,
                       filename=filename,sr=self.sr)
         
@@ -413,6 +453,7 @@ class note_sequence:
             note_sequence.sf_path = sf2_path
         
     def clone(self):
+        """Returnes a copy of the contents of the class"""
         s_clone = note_sequence()
         s_clone.prev_octave = self.prev_octave
         
@@ -421,7 +462,8 @@ class note_sequence:
         return s_clone
     
     def append(self, note, copy=False):
-        """If copy is set to true, the note is cloned first. Otherwise reference is passed
+        """If copy is set to true, the note is cloned first. 
+        Otherwise reference is passed
         """
         if copy:
             #Double-checked manually, these are all primitives
@@ -568,6 +610,8 @@ class note_sequence:
         return first
     
     def shift(self, time):
+        """Shifts all notes by the specified amount. Positive amount adds 
+            delay, negative value makes the notes be played earlier"""
         for note in self.sequence.notes:
             note.start_time+=time
             note.end_time+=time
@@ -724,7 +768,10 @@ class note_sequence:
         return synthesized
     
     def _fluidsynth_midi_stateful(self, midi_object, fs=44100):
-        """Synthesize using fluidsynth.
+        """Taken from github.com/craffel/pretty-midi/ 
+        The key change is that sf2_path can now be a loaded file, 
+        thus reducing disk load. Default file load removed.
+        Synthesize using fluidsynth.
         Parameters
         ----------
         fs : int
