@@ -582,7 +582,7 @@ rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suf
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
-#%% Verify correct checkpointing
+#%% Verify correct checkpoint load
 checkpoint_idx = 2000
 fn_weights = ('./data/checkpoints/200/'
             'checkpoint__16_6_6_[2]_checkpoint_verif_{}.h5').format(checkpoint_idx)
@@ -608,6 +608,85 @@ for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]
     
 rn.report(test = True, filename_test= fn_weights + '.csv', 
           class_names = class_names)
+
+#%% Verify logging
+suffix = '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
+         '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
+                '_checkpoint_verif'
+                
+chkp_dir = './data/checkpoints/200'
+print('Suffix used: ' + suffix)
+
+rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
+             output_classes=10,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=pool_layer_frequency,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= chkp_dir, checkpoint_frequency = 250,
+             checkpoint_prefix = 'checkpoint_' + suffix,
+             verbose = False)
+rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
+
+
+test_set_size = 500
+pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
+for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.train([expanded_image],expanded_label)
+    pb.check_progress()
+    
+    
+rn2 = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
+             output_classes=10,
+             convolutional_layer_count=convolutional_layer_count,
+             pool_layer_frequency=pool_layer_frequency,
+             feature_expand_frequency = feature_expand_frequency,
+             residual_layer_frequencies=residual_layer_frequencies,
+             checkpoint_dir= chkp_dir, checkpoint_frequency = 200,
+             checkpoint_prefix = 'checkpoint_' + suffix,
+             verbose = False)
+
+def check(rn1,rn2):
+    if rn1.metrics_names!=rn2.metrics_names:
+        return 'names mismatch!'
+    if rn1.metrics_train!=rn2.metrics_train:
+        return 'training mismatch!'
+    if rn1.metrics_test!=rn2.metrics_test:
+        return 'testing mismatch!'
+    return "OK"
+
+rn2.load_metrics(chkp_dir,index=500,test=False,use_csv=False)
+print(check(rn,rn2))
+
+test_set_size = 200
+pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
+for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
+    expanded_image = np.expand_dims(image,axis=0)
+    expanded_label = np.expand_dims(label,axis=0)
+    rn.test([expanded_image],expanded_label)
+    pb.check_progress()
+    
+
+men, tra,tes, csv = [[True, False]]*4
+for me in men:
+    for tr in tra:
+        for te in tes:
+            for cs in csv:
+                rn.save_metrics(directory=chkp_dir, index=None,
+                                 training=tr, test = te, use_csv=cs)
+                if tr:
+                    rn2.metrics_train = []
+                if te:
+                    rn2.metrics_test = []
+                if me:        
+                    rn2.metics_names = None
+                    
+                rn2.load_metrics(directory=chkp_dir, index = None,
+                                     training=tr, test = te, use_csv=cs, 
+                                     load_metric_names=me)
+                print(check(rn,rn2),':',me,tr,te,cs)
 
 #%% Using higher batch size
 batch_size = 16

@@ -331,6 +331,98 @@ class res_net:
                               y_pred_scaled,y_true_scaled]
         return custom_metrics
     
+    def save_metrics(self,directory='.',prefix='metrics_logs_', index=None,
+                     training=True, test = True, use_csv=True):
+        """ Saves the metrics until now to a file.
+            params:
+                directory: directory to save to
+                prefix: 'training.format' and 'test.format' will be added to this
+                index: appended after prefix
+                training: save the training metrics
+                test: save the testing metrics
+                use_csv: If True, format=csv (numpy.savetxt) is used. 
+                    If False format=npy (numpy.save) is used
+        """
+        traintest = []
+        if training:
+            traintest.append(('training',self.metrics_train))
+        if test:
+            traintest.append(('test',self.metrics_test))
+            
+        if index is None:
+            index=''
+        else:
+            index=str(index) + '_'
+            
+        for tt in traintest:
+            if use_csv:
+                np.savetxt(os.path.join(directory,prefix + index + tt[0]
+                            + '.csv'), tt[1], delimiter=',', 
+                            header = ','.join(self.metrics_names))
+            else:
+                np.savez_compressed(os.path.join(directory,prefix + index + tt[0]
+                        + '.npz'),metrics=tt[1],names=self.metrics_names)
+        
+    def load_metrics(self,directory='.',prefix='metrics_logs_', index = None,
+                     training=True, test = True, use_csv=True, 
+                     load_metric_names=False):
+        """Replaces in this instance withthe metrics stored in the 
+            specified directories.
+            params:
+                directory: directory to load from
+                prefix: files should be of format prefix + 'training.format' and 
+                    prefix+'test.csv'
+                index: appears after prefix
+                training: load the training metrics
+                test: save the testing metrics
+                use_csv: If True format = csv (numpy.gendomtxt).
+                    If false format = npy (numpy.load)
+                load_metric_names: replace the metrics_names in the instance
+                    with the header of the file
+        """
+        if index is None:
+            index=''
+        else:
+            index=str(index) + '_'
+            
+        if training:
+            if use_csv:
+                self.metrics_train = \
+                    np.genfromtxt(os.path.join(directory,prefix + index + 
+                                               'training.csv'),
+                           delimiter=',')
+                if load_metric_names:
+                    with open(os.path.join(directory,prefix + index + 
+                                               'training.csv'),'r') as f:
+                        self.metrics_names = f.readline()[2:].split(',')
+                        self.metrics_names[-1] = self.metrics_names[-1][:-1]
+            else:
+                npz = np.load(os.path.join(directory, prefix +
+                                                             index +
+                                                             'training.npz'))
+                self.metrics_train = npz['metrics']
+                if load_metric_names:
+                    self.metrics_names = list(npz['names'])
+            self.metrics_train = [list(m) for m in self.metrics_train]
+        if test:
+            if use_csv:
+                self.metrics_test = \
+                    np.genfromtxt(os.path.join(directory,prefix + index + 
+                                               'test.csv'),
+                           delimiter=',')
+                if load_metric_names:
+                        with open(os.path.join(directory,prefix + index + 
+                                                   'training.csv'),'r') as f:
+                            self.metrics_names = f.readline()[2:].split(',')
+                            self.metrics_names[-1] = self.metrics_names[-1][:-1]
+            else:
+                npz = np.load(os.path.join(directory,prefix + 
+                                                         index + 'test.npz'))
+                self.metrics_test = npz['metrics']
+                if load_metric_names:
+                    self.metrics_names = list(npz['names'])
+            self.metrics_test = [list(m) for m in self.metrics_test]
+    
     def train(self,x,y):
         """Wrapper for train_on_batch. 
         Rescales output when specified in the constructor.
@@ -363,8 +455,15 @@ class res_net:
                 
             self.model.save_weights(
                     os.path.join(self.checkpoint_dir,
-                                 self.checkpoint_prefix + '_{}.h5'.format(self.current_batch))
+                                 self.checkpoint_prefix + 
+                                 '_{}.h5'.format(self.current_batch))
                     )
+            #Saving to a single file and making a backup each time to avoid 
+            #possible corruption is an alternative, but considering the size
+            #difference between the weights file and logs, this isn't so bad
+            #either (10 MB vs 100Kb)
+            self.save_metrics(self.checkpoint_dir, index=self.current_batch,
+                              training=True, test = False, use_csv=False)
         self.current_batch += 1
         
         return self.metrics_train[-1][self.metrics_true_ind]
