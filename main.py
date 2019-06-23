@@ -13,6 +13,7 @@ import os
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AMT-SAGA entry point.')
+    #Path and crucial files
     parser.add_argument('-soundfont_path',nargs='?',
                         default=os.path.join('..',
                                              'soundfonts','GM_soundfonts.sf2'),
@@ -21,6 +22,8 @@ if __name__ == '__main__':
                         default=os.path.join('.','data'),
                         help = 'The directory containing the files for '
                         'training, testing etc.')
+    
+    #Model parallelization
     parser.add_argument('-sequential',
                         action = 'store_true',
                         help = 'Specifying this will force the algorithm to '
@@ -46,6 +49,19 @@ if __name__ == '__main__':
                         help = 'Specifying to allow traing models in parallel.'
                         ' This can cause instability or slowerperformance than'
                         ' the sequential approach')
+    
+    #Checkpoint & debug
+    parser.add_argument('-checkpoint_freq',
+                        default = 200,
+                        help = 'The freqency at which the model weights will '
+                        'be saved. Measured in batches')
+    parser.add_argument('-note_save_freq',
+                        default = 500,
+                        help = 'The frequency at which the currently generated'
+                        'and subtracted notes will be displayed. This can be '
+                        'useful to see if no synthetizer error has occured')
+    
+    #Displayed Messages
     parser.add_argument('-silent',
                         action='store_true',
                         help = 'Do not display progress messages')
@@ -58,7 +74,8 @@ if __name__ == '__main__':
     batch_size = args['batch_size']
     silent = args['silent']
     sequential = args['sequential']
-    #mp.set_start_method('spawn')
+    check_freq = args['checkpoint_freq']
+    note_save_freq = args['note_save_freq']
     
     #using the import here allows using the --help without loading the libraries
     from util_train_test import Hyperparams
@@ -68,15 +85,19 @@ if __name__ == '__main__':
                     window_size_note_time=6,
                     batch_size = 1,
                     parallel_train= False,
-                    synth_worker_count= 1)
+                    synth_worker_count= 1,
+                    checkpoint_frequency = check_freq)
 
         train_sequential(p, not silent)
     else:
         from training import train_parallel
-        p = Hyperparams(path_data, path_sf, batch_size = batch_size,
+        p = Hyperparams(path_data, path_sf, 
+                        batch_size = batch_size,
                         parallel_train=par_train,
                         synth_worker_count=synth_workers,
-                        window_size_note_time=6)
+                        window_size_note_time=6,
+                        checkpoint_frequency = check_freq,
+                        note_save_freq = note_save_freq)
     
         train_parallel(p, not silent)
         

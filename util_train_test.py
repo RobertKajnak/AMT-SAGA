@@ -12,7 +12,8 @@ class Hyperparams:
     def __init__(self, path, sf_path, 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
                  batch_size = 8, synth_worker_count =1,
-                 parallel_train=False):
+                 parallel_train=False,
+                 note_save_freq=0):
         self.N = N
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
@@ -37,7 +38,7 @@ class Hyperparams:
         self.synth_worker_count = synth_worker_count
         self.path = path
         self.sf_path = sf_path
-        
+        self.note_save_freq = note_save_freq
 
 
 def relevant_notes(sequence, offset, duration):

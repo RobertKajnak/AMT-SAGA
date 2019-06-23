@@ -61,27 +61,12 @@ def train_sequential(params, DEBUG):
         mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
         # TODO - Remove drums - hopefully it can learn to ignore it though
         # TODO -  Add random instrument shifts
-        
-        if DEBUG:
-            print('Creating first cut')
+
             
         audio_w = mid_wf.section(offset, None, params.timing_input_shape)
         notes_target, notes_w = relevant_notes(mid, offset, 
                                                params.window_size_note_time)
         while offset < mid.duration:
-
-            if DEBUG:
-#                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
-#                print('Saving to {}'.format(fn_base))
-#                if audio_w is not audio_w_last: #only print when new section emerges
-#                   audio_w.save(fn_base+'.flac')
-##                   audio_complete(notes_target.render(sf_path),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended
-#                
-#                   audio_w_last = audio_w
-#                   notes_target.save(fn_base+'_target.mid')
-#                   notes_w.save(fn_base+'_inclusive.mid')
-                DEBUG += 1
-
             note_gold = notes_target.pop(lowest=True, threshold=frametime)
             # training
             if note_gold is not None:
@@ -133,11 +118,24 @@ def train_sequential(params, DEBUG):
                                   is_drum=False)
             
             ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
-#            if DEBUG:
-#                print(onset_gold)
-#                ac_note_guessed.save(fn_base+'_guess.flac')
-#                note_last = note_gold
+
+            if DEBUG and params.note_save_freq:
+                DEBUG += 1
+                if DEBUG % params.note_save_freq == 0:
+                    fn_base = os.path.join(params.path, 'debug', 
+                                           os.path.split(fn[0])[-1][:-4] + 
+                                           str(DEBUG))
+                    print('Saving sample {} to {}'.format(DEBUG,fn_base))
+                    
+                    audio_w.save(fn_base+'_full_window.flac')
+                    audio_sw.save(fn_base+'_short_window.flac')
+                    note_guessed.save(fn_base + '_guessed.mid')
+                    ac_note_guessed.save(fn_base+'_guessed.flac')
+                    
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
+    
+            if (params.note_save_freq!=0) and (DEBUG % params.note_save_freq == 0):
+                audio_w.save(fn_base + '_after_subtr.flac')
 
             onset_s = onset_gold
             duration_s = duration_gold
@@ -229,24 +227,16 @@ def init_sample_aquisition(samples_q):
 
 def thread_sample_aquisition(filename,params, DEBUG=False):
     fn = filename
+    mid = note_sequence(fn[0])
 
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
-    
 
-    mid = note_sequence(fn[0])
-
-    
-#    if DEBUG:
-#        DEBUG = 1
-#    if DEBUG:
-#        audio_w_last = None
     offset = 0
-
     if DEBUG:
         print('Generating wav for midi {}'.format(fn))
-    
+        DEBUG = 1
     try:
         mid_wf = audio_complete(mid.render(), params.N - 2)
         # TODO - Remove drums - hopefully it can learn to ignore it though
@@ -261,21 +251,9 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
         return
         
     while offset < mid.duration:
-
-#        if DEBUG:
-#                fn_base = os.path.join(path, 'debug', os.path.split(fn[0])[-1][:-4] + str(DEBUG))
-#                print('Saving to {}'.format(fn_base))
-#                if audio_w is not audio_w_last: #only print when new section emerges
-#                   audio_w.save(fn_base+'.flac')
-##                   audio_complete(notes_target.render(),params.N-2).save(fn_base + '_target.flac')# -- tested, this works as intended     
-#                   audio_w_last = audio_w
-#                   notes_target.save(fn_base+'_target.mid')
-#                   notes_w.save(fn_base+'_inclusive.mid')
-#            DEBUG += 1
-
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         # training
-        if note_gold is not None:
+        if DEBUG and note_gold is not None:
             print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
                   format(offset, note_gold.start_time,note_gold.end_time))
             
@@ -317,14 +295,25 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
                               is_drum=False)
         
         ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
-        audio_w.subtract(ac_note_guessed, offset=onset_gold)
         
-#            if DEBUG:
-#                print(onset_gold)
-        #               ac_note_guessed.save(fn_base+'_guess.flac')
-#                note_last = note_gold
+        if DEBUG and params.note_save_freq:
+            DEBUG += 1
+            if DEBUG % params.note_save_freq == 0:
+                fn_base = os.path.join(params.path, 'debug', 
+                                       os.path.split(fn[0])[-1][:-4] + 
+                                       str(DEBUG))
+                print('Saving sample {} to {}'.format(DEBUG,fn_base))
+                
+                audio_w.save(fn_base+'_full_window.flac')
+                audio_sw.save(fn_base+'_short_window.flac')
+                note_guessed.save(fn_base + '_guessed.mid')
+                ac_note_guessed.save(fn_base+'_guessed.flac')
+                
+        audio_w.subtract(ac_note_guessed, offset=onset_gold)
 
-
+        if (params.note_save_freq!=0) and (DEBUG % params.note_save_freq == 0):
+            audio_w.save(fn_base + '_after_subtr.flac')
+            
 # noinspection PyShadowingNames
 def train_parallel(params,DEBUG):
     """ Prepare data, training and test"""
