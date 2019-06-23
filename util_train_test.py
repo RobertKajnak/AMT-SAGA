@@ -8,11 +8,17 @@ Created on Fri Jun 21 15:41:33 2019
 
 import numpy as np
 
+PATH_MODEL_META = 'model_meta'
+PATH_NOTES = 'notes'
+PATH_CHECKPOINTS = 'checkpoints'
+
 class Hyperparams:
-    def __init__(self, path, sf_path, 
+    def __init__(self, path_data, sf_path, path_output='.', 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
                  batch_size = 8, synth_worker_count =1,
                  parallel_train=False,
+                 checkpoint_dir ='./data/checkpoints',
+                 checkpoint_frequency = 200,
                  note_save_freq=0):
         self.N = N
         self.sr = sr
@@ -27,8 +33,8 @@ class Hyperparams:
 #        self.kernel_sizes_pitch = [(3, 32), (3, 8)]
 #        self.pool_sizes_pitch = [(2, 5), (2, 5)]
 
-        self.checkpoint_dir = './data/checkpoints'
-        self.checkpoint_frequency = 200
+        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_frequency = checkpoint_frequency
         self.convolutional_layer_count = 33
         self.pool_layer_frequency = 12
         self.feature_expand_frequency = 12  # pool_layer_frequency
@@ -36,8 +42,9 @@ class Hyperparams:
 
         self.parallel_train = parallel_train
         self.synth_worker_count = synth_worker_count
-        self.path = path
+        self.path_data = path_data
         self.sf_path = sf_path
+        self.path_output = path_output
         self.note_save_freq = note_save_freq
 
 

@@ -9,7 +9,7 @@ Created on Sat Jun 22 11:13:26 2019
 
 import os
 from multiprocessing import Process, Value, Queue, Lock, Pool
-import time
+import logging
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -18,50 +18,61 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
-from util_train_test import relevant_notes,note_sample
-
+from util_train_test import relevant_notes,note_sample,PATH_MODEL_META,PATH_NOTES
 
 import ProgressBar as PB
 
-def train_sequential(params, DEBUG):
-    """ Prepare data, training and test"""
+try:
+    logging.DETAILED
+except:
+    logging.DETAILED = 15
+    logging.addLevelName(logging.DETAILED, "DETAILED")
+    def detailed(self, message, *args, **kws):
+        if self.isEnabledFor(logging.DETAILED):
+            # Yes, logger takes its '*args' as 'args'.
+            self._log(logging.DETAILED, message, args, **kws) 
+    logging.Logger.detailed = detailed
 
-    dm = util_dataset.DataManager(params.path, sets=['training', 'test'], types=['midi'])
+def train_sequential(params):
+    """ DEPRECATED
+    Prepare data, training and test"""
+    logger = logging.getLogger('AMT-SAGA.train_seq')
+
+    dm = util_dataset.DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
+    
 #    onset_detector = OnsetDetector(params)
-#    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
+#    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
 #    duration_detector = DurationDetector(params)
-#    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
-    if DEBUG:
-        print('Loading Pitch Classifier')
+#    duration_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'duration'+'.png'))
+
+    logger.info('Loading Pitch Classifier')
     pitch_classifier = PitchClassifier(params)
-    pitch_classifier.plot_model(os.path.join(params.path,'model_meta','pitch'+'.png'))
-    if DEBUG:
-        print('Loading Instrument Classifier')
+    pitch_classifier.plot_model(os.path.join(params.path_output,
+                                             PATH_MODEL_META,'pitch'+'.png'))
+
+    logger.info('Loading Instrument Classifier')
     instrument_classifier = InstrumentClassifier(params)
-    instrument_classifier.plot_model(os.path.join(params.path,'model_meta','instrument'+'.png'))
+    instrument_classifier.plot_model(os.path.join(params.path_output
+                                                  ,PATH_MODEL_META,
+                                                  'instrument'+'.png'))
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
     pb = PB.ProgressBar(300000)
+    print('')
     dm.set_set('training')
     for fn in dm:
         mid = note_sequence(fn[0])
-
         sheet = note_sequence()
         
-        if DEBUG:
-            DEBUG = 1
-        if DEBUG:
-            audio_w_last = None
+        note_i = 0
         offset = 0
 
-        if DEBUG:
-            print('Generating wav for midi')
+        logger.info('Generating wav for midi {}'.format(fn))
         mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
         # TODO - Remove drums - hopefully it can learn to ignore it though
         # TODO -  Add random instrument shifts
-
             
         audio_w = mid_wf.section(offset, None, params.timing_input_shape)
         notes_target, notes_w = relevant_notes(mid, offset, 
@@ -70,9 +81,8 @@ def train_sequential(params, DEBUG):
             note_gold = notes_target.pop(lowest=True, threshold=frametime)
             # training
             if note_gold is not None:
-                if DEBUG:
-                    print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
-                          format(offset, note_gold.start_time,note_gold.end_time))
+                logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
+                      format(offset, note_gold.start_time,note_gold.end_time))
                 
                 onset_gold = note_gold.start_time
                 duration_gold = note_gold.end_time - note_gold.start_time
@@ -107,7 +117,6 @@ def train_sequential(params, DEBUG):
             instrument_sw = instrument_classifier.classify(audio_sw, instrument_gold)
 
             pb.check_progress()
-            print('')
             pitch_s = int(pitch_s)
             instrument_sw = int(instrument_sw)
 
@@ -119,13 +128,13 @@ def train_sequential(params, DEBUG):
             
             ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
 
-            if DEBUG and params.note_save_freq:
-                DEBUG += 1
-                if DEBUG % params.note_save_freq == 0:
-                    fn_base = os.path.join(params.path, 'debug', 
+            if params.note_save_freq:
+                note_i += 1
+                if note_i % params.note_save_freq == 0:
+                    fn_base = os.path.join(params.path_output, PATH_NOTES, 
                                            os.path.split(fn[0])[-1][:-4] + 
-                                           str(DEBUG))
-                    print('Saving sample {} to {}'.format(DEBUG,fn_base))
+                                           str(note_i))
+                    logger.detailed('Saving sample {} to {}'.format(note_i,fn_base))
                     
                     audio_w.save(fn_base+'_full_window.flac')
                     audio_sw.save(fn_base+'_short_window.flac')
@@ -134,7 +143,8 @@ def train_sequential(params, DEBUG):
                     
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
     
-            if (params.note_save_freq!=0) and (DEBUG % params.note_save_freq == 0):
+            if (params.note_save_freq!=0) and \
+                (note_i % params.note_save_freq == 0):
                 audio_w.save(fn_base + '_after_subtr.flac')
 
             onset_s = onset_gold
@@ -143,44 +153,48 @@ def train_sequential(params, DEBUG):
 #            pitch_s = pitch_gold
             sheet.add_note(instrument_sw, instrument_sw, pitch_s, onset_s + offset, onset_s + offset + duration_s)
 
-        fn_result = os.path.join(params.path, 'results', os.path.split(fn[0])[-1])
+        fn_result = os.path.join(params.path_output, 'results',
+                                 os.path.split(fn[0])[-1])
         sheet.save(fn_result)
 #        audio_complete(sheet.render(sf_path), params.N - 2).save(fn_result + '.flac')
 
 def thread_classification(model_name,params,q_samples, training_finished, 
-                          training_lock = None,DEBUG=False):
+                          training_lock = None):
     i_b = 0
     training_lock and training_lock.acquire()
     if model_name == 'pitch':
-        if DEBUG:
-            print('Loading Pitch Classifier')
+        logger = logging.getLogger('AMT-SAGA.pitch_class')
+        logger.info('Loading Pitch Classifier')
         model = PitchClassifier(params)
-        model.plot_model(os.path.join(params.path,'model_meta','pitch'+'.png'))
+        model.plot_model(os.path.join(params.path_output,
+                                      PATH_MODEL_META,'pitch'+'.png'))
     if model_name == 'instrument':
-        if DEBUG:
-            print('Loading Instrument Classifier')
+        logger = logging.getLogger('SAGA.instrument_class')
+        logger.info('Loading Instrument Classifier')
         model = InstrumentClassifier(params)
-        model.plot_model(os.path.join(params.path,'model_meta','instrument'+'.png'))
+        model.plot_model(os.path.join(params.path_output,
+                                      PATH_MODEL_META,'instrument'+'.png'))
     training_lock and training_lock.release()
 #    onset_detector = OnsetDetector(params)
-#    onset_detector.plot_model(os.path.join(path,'model_meta','onset'+'.png'))
+#    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
 #    duration_detector = DurationDetector(params)
-#    duration_detector.plot_model(os.path.join(path,'model_meta','duration'+'.png'))
+#    duration_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'duration'+'.png'))
 
     while training_finished.value == 0:
         sample = q_samples.get()
         training_lock and training_lock.acquire()
-        if DEBUG:
-            print('Starting {} Classification for Batch {}'.format(model_name,i_b))
-            i_b+=1
+        
+        logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
+        i_b+=1
         model.classify(sample[0],sample[1])
         training_lock and training_lock.release()
     
 
 def thread_training(samples_q, params,training_finished, 
-                    allow_parallel_training=False, DEBUG = False):
-    if DEBUG:
-        b_i=0
+                    allow_parallel_training=False):
+
+    b_i=0
+    logger = logging.getLogger('SAGA.training_master')
     
     #Technically pipes may be better, but the ease of use outweighs the 
     #performance penalty, especially compared to audio generation and training
@@ -194,11 +208,11 @@ def thread_training(samples_q, params,training_finished,
     proc_pitch = Process(target=thread_classification, 
                             args=('pitch',params, q_pitch,
                                   training_finished,
-                                  training_lock, DEBUG))
+                                  training_lock))
     proc_inst = Process(target=thread_classification, 
                         args=('instrument',params, q_inst,
                               training_finished,
-                              training_lock, DEBUG))
+                              training_lock))
     proc_pitch.start()
     proc_inst.start()
     
@@ -211,9 +225,9 @@ def thread_training(samples_q, params,training_finished,
             pitch_y.append(sample.pitch)
             instrument_x.append(sample.audio)
             instrument_y.append(sample.instrument)
-        if DEBUG:
-            print('Sending Batch {}'.format(b_i))
-            b_i += 1
+
+        logger.debug('Sending Batch {}'.format(b_i))
+        b_i += 1
         
         q_pitch.put((pitch_x,pitch_y))
         q_inst.put((instrument_x,instrument_y))
@@ -225,18 +239,19 @@ def init_sample_aquisition(samples_q):
     global samples_q_g
     samples_q_g = samples_q
 
-def thread_sample_aquisition(filename,params, DEBUG=False):
+def thread_sample_aquisition(filename,params):
     fn = filename
     mid = note_sequence(fn[0])
+    logger = logging.getLogger('SAGA.sample_gen')
 
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
     offset = 0
-    if DEBUG:
-        print('Generating wav for midi {}'.format(fn))
-        DEBUG = 1
+    
+    logger.info('Generating wav for midi {}'.format(fn))
+    note_i = 1
     try:
         mid_wf = audio_complete(mid.render(), params.N - 2)
         # TODO - Remove drums - hopefully it can learn to ignore it though
@@ -246,15 +261,15 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
         notes_target, notes_w = relevant_notes(mid, offset, 
                                                params.window_size_note_time)
     except Exception as ex:
-        print('Could not process file {} with error {}. Skipping...'.
+        logger.detailed('Could not process file {} with error {}. Skipping...'.
               format(fn,ex))
         return
         
     while offset < mid.duration:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         # training
-        if DEBUG and note_gold is not None:
-            print('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
+        if note_gold is not None:
+            logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
                   format(offset, note_gold.start_time,note_gold.end_time))
             
             onset_gold = note_gold.start_time
@@ -296,13 +311,13 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
         
         ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
         
-        if DEBUG and params.note_save_freq:
-            DEBUG += 1
-            if DEBUG % params.note_save_freq == 0:
-                fn_base = os.path.join(params.path, 'debug', 
+        if params.note_save_freq:
+            note_i += 1
+            if note_i % params.note_save_freq == 0:
+                fn_base = os.path.join(params.path_output, PATH_NOTES, 
                                        os.path.split(fn[0])[-1][:-4] + 
-                                       str(DEBUG))
-                print('Saving sample {} to {}'.format(DEBUG,fn_base))
+                                       str(note_i))
+                logger.detailed('Saving sample {} to {}'.format(note_i,fn_base))
                 
                 audio_w.save(fn_base+'_full_window.flac')
                 audio_sw.save(fn_base+'_short_window.flac')
@@ -311,13 +326,13 @@ def thread_sample_aquisition(filename,params, DEBUG=False):
                 
         audio_w.subtract(ac_note_guessed, offset=onset_gold)
 
-        if (params.note_save_freq!=0) and (DEBUG % params.note_save_freq == 0):
+        if (params.note_save_freq!=0) and (note_i % params.note_save_freq == 0):
             audio_w.save(fn_base + '_after_subtr.flac')
             
 # noinspection PyShadowingNames
-def train_parallel(params,DEBUG):
+def train_parallel(params):
     """ Prepare data, training and test"""
-    dm = util_dataset.DataManager(params.path, sets=['training', 'test'], types=['midi'])
+    dm = util_dataset.DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
         
     samples_q = Queue(params.batch_size)
 
@@ -325,8 +340,7 @@ def train_parallel(params,DEBUG):
     training_finished = Value('b',0)
     proc_training = Process(target=thread_training, args=(samples_q,params,
                                                           training_finished,
-                                                          params.parallel_train,
-                                                          DEBUG))
+                                                          params.parallel_train))
     proc_training.start()
 
     #Pre-loading sounfont here means that threads don't use the memory separately
@@ -337,15 +351,15 @@ def train_parallel(params,DEBUG):
     if params.synth_worker_count == 1:
         init_sample_aquisition(samples_q)
         for fn in dm:
-            thread_sample_aquisition(fn, params, DEBUG)
+            thread_sample_aquisition(fn, params)
     else:
         pool = Pool(processes = params.synth_worker_count,
                     initializer=init_sample_aquisition,
                     initargs=(samples_q,))  
         
         results = [pool.apply_async(thread_sample_aquisition, 
-                                   args=(fn, params, DEBUG)
-                                   ) for fn in dm ]
+                                   args=(fn, params)
+                                   ) for fn in dm]
         for result in results:
             result.get()
     training_finished.value = 1        

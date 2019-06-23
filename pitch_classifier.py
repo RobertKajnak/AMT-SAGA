@@ -27,7 +27,8 @@ class pitch_classifier(res_net):
                          checkpoint_frequency=params.checkpoint_frequency,
                          checkpoint_prefix='checkpoint_onset_',
                          metrics=[],
-                         verbose=False)
+                         
+                         logging_parent = 'AMT-SAGA')
 
         self.params = params
         

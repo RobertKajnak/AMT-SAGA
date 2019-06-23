@@ -10,16 +10,16 @@ Created on Wed Mar 27 16:10:28 2019
 
 from __future__ import absolute_import, division, print_function
 
+import os
+import logging
+import numpy as np
+import csv
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report
+
 # TensorFlow and tf.keras
 import tensorflow as tf
 from tensorflow import keras
-import os
-
-# Helper libraries
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.metrics import classification_report
-import csv
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import Callback
@@ -60,7 +60,7 @@ class res_net:
                  weights_load_checkpoint_filename=None,
                  starting_checkpoint_index=1,
                  
-                 verbose = True):
+                 logging_parent=None):
         '''Residual net
         params:    
             input_shapes: the input shape of the separate input channels. 
@@ -106,16 +106,31 @@ class res_net:
                 imported from this file
             starting_checkpoint_index: specify this to continue batch 
                 numbering from a previous point
+                
+            logging_parent: sets the verbosity of the network. Uses the default
+                values from logging library. 
+                specifying a value other than None will attach a logger to 
+                the stdout with the specified level
         '''
+        
+        if logging_parent is None:    
+            self.logger = logging.getLogger('res_net')
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.DEBUG)
+            self.logger.addHandler(ch)
+        else:
+            self.logger = logging.getLogger(logging_parent + '.res_net')
+        
+        
         self.batch_size = batch_size
         activation_fuction = 'sigmoid'
         self.out_func_min = 0
         self.out_func_max = 1
         self.out_func_factor = self.out_func_max - self.out_func_min
         self.output_classes = output_classes
-        self.verbose = verbose
-        if verbose:
-            print('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
+        
+        
+        self.logger.debug('Creating Model structure, Tensorflow Versions: {}'.format(tf.__version__))
         for i in range(len(metrics)):
             if isinstance(metrics[i],str):
                 metrics[i] = get_metric_by_name(metrics[i])
@@ -191,11 +206,11 @@ class res_net:
             self.out_val_min = output_range[0]
             self.out_val_max = output_range[1]
             self.out_val_factor = output_range[1]-output_range[0]
-            if verbose:
-                print('Output scaling set to: [{},{}] -> [{},{}] ({})'.
-                      format(self.out_val_min,self.out_val_max,
-                             self.out_func_min,self.out_func_max,
-                             activation_fuction))
+            
+            self.logger.debug('Output scaling set to: [{},{}] -> [{},{}] ({})'.
+                  format(self.out_val_min,self.out_val_max,
+                         self.out_func_min,self.out_func_max,
+                         activation_fuction))
         else:
             raise ValueError('Invalid output size {}'.format(str(output_classes)))
         
@@ -224,8 +239,8 @@ class res_net:
 
         
         if weights_load_checkpoint_filename is not None:
-            if verbose:
-                print('Loading Weights from {}'.format(weights_load_checkpoint_filename))
+            
+            self.logger.info('Loading Weights from {}'.format(weights_load_checkpoint_filename))
             self.load_weights(weights_load_checkpoint_filename)
             
         self.checkpoint_dir = checkpoint_dir
@@ -247,12 +262,11 @@ class res_net:
         else:
             self.metrics_true_ind = self._get_metric_ind('y_true')
             
-        if verbose:
-            print('Using metrics:')
-            print(self.metrics_names)
-            oname = str(self.model.optimizer)
-            oname = oname[oname.find('optimizers')+11:oname.find('object')-1]
-            print('Optimizer: ' + oname)
+        self.logger.debug('Using metrics:')
+        self.logger.debug(self.metrics_names)
+        oname = str(self.model.optimizer)
+        oname = oname[oname.find('optimizers')+11:oname.find('object')-1]
+        self.logger.debug('Optimizer: ' + oname)
         
     def _to_array(self,single):
         """Converts a single value (e.g. int, float, str) into an array 
@@ -430,12 +444,12 @@ class res_net:
         Sample and class weights constant
         Returns the scaled predicted value
         """
-#        print('x format = {}'.format(x[0].shape))
-#        print('y={}'.format(y))        
+#        self.logger.debug('x format = {}'.format(x[0].shape))
+#        self.logger.debug('y={}'.format(y))        
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
-        #print(y)
+        #self.logger.debug(y)
         #TODO: Check if it is possible to only update when the error values are small
         self.metrics_train.append(
                 self.model.train_on_batch(
@@ -443,15 +457,15 @@ class res_net:
                 )
             
         if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
-            if self.verbose:
-                print('Saving checkpoint {}'.format(self.current_batch))
-                progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
-                avgs = np.average(self.metrics_train[
-                                self.current_batch-self.checkpoint_frequency:
-                                self.current_batch],axis=0)
-                for idx,metric_name in enumerate(self.metrics_names[:-2]):
-                    progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
-                print(progress_str)
+            
+            self.logger.info('Saving checkpoint {}'.format(self.current_batch))
+            progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
+            avgs = np.average(self.metrics_train[
+                            self.current_batch-self.checkpoint_frequency:
+                            self.current_batch],axis=0)
+            for idx,metric_name in enumerate(self.metrics_names[:-2]):
+                progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
+            self.logger.info(progress_str)
                 
             self.model.save_weights(
                     os.path.join(self.checkpoint_dir,
@@ -510,7 +524,7 @@ class res_net:
         if self.output_classes == 1:
             y = self._scale_output_to_activation(y)
         
-        #print(y)
+        #self.logger.debug(y)
         if use_predict:
             y_pred = self.model.predict_on_batch(x)
             for i in range(y.shape[0]):
@@ -627,8 +641,19 @@ class res_net:
         
     def plot(self,metrics_to_plot=[0,1],moving_average_window=10,
              filename_training=None, filename_test=None):
-        """Prints the classification report for both training and test, if available.
-        If the filename is specifies, the report(s) is/are saved to a csv file"""
+        """Plots the metrics over the training and test data, where available.
+            params:
+                metrics_to_plot: the indices of the metrics to use. The 
+                    metrics_names property contains the names. See also 
+                    get_metric_test, get_metric_test and _get_metric_ind 
+                    functions
+                moving_average_window: the window to use to smooth the data
+                    1 will result in no smoothing
+                filename_training. If specified a png of the training data 
+                    will be saved to the specified file
+                filename_test. If specified a png of the test data 
+                    will be saved to the specified file
+        """
 
         def moving_average(x):        
             r_list = []

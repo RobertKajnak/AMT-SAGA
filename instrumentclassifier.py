@@ -24,7 +24,8 @@ class InstrumentClassifier(res_net):
                          checkpoint_dir=params.checkpoint_dir, checkpoint_frequency=params.checkpoint_frequency,
                          checkpoint_prefix='checkpoint_onset_',
                          metrics = [],
-                         verbose=False)
+                         
+                         logging_parent = 'AMT-SAGA')
 
         self.params = params
 

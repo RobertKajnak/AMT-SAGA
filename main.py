@@ -9,10 +9,15 @@ Dataset: https://colinraffel.com/projects/lmd/
 
 import argparse
 import os
-
+import logging
+import traceback
+from util_train_test import Hyperparams,PATH_MODEL_META,PATH_NOTES,\
+    PATH_CHECKPOINTS
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='AMT-SAGA entry point.')
+    parser = argparse.ArgumentParser(description='AMT-SAGA entry point.',
+                                     formatter_class=\
+                                     argparse.ArgumentDefaultsHelpFormatter)
     #Path and crucial files
     parser.add_argument('-soundfont_path',nargs='?',
                         default=os.path.join('..',
@@ -22,6 +27,10 @@ if __name__ == '__main__':
                         default=os.path.join('.','data'),
                         help = 'The directory containing the files for '
                         'training, testing etc.')
+    parser.add_argument('-output_path',
+                        default=os.path.join('.','output'),
+                        help = 'Path to create log files, model structure ' 
+                        'graphs, metrics etc.')
     
     #Model parallelization
     parser.add_argument('-sequential',
@@ -53,52 +62,126 @@ if __name__ == '__main__':
     #Checkpoint & debug
     parser.add_argument('-checkpoint_freq',
                         default = 200,
+                        type = int,
                         help = 'The freqency at which the model weights will '
                         'be saved. Measured in batches')
     parser.add_argument('-note_save_freq',
                         default = 500,
+                        type = int,
                         help = 'The frequency at which the currently generated'
                         'and subtracted notes will be displayed. This can be '
                         'useful to see if no synthetizer error has occured')
+    #Logging/Messages
+    parser.add_argument('-logging_level_console',
+                        default = 2,
+                        type = int,
+                        help = 'The amount of messages that should be printed '
+                        'to the console or out stream. Levels: 3 - exceptions '
+                        'only; 2 - infrequent, e.g. ininitalization and '
+                        'checkpointing, loading songs. 1 - detailed. '
+                        'sending batches etc. 0 - debug. Everything, '
+                        'including every note generation')
+    parser.add_argument('-disable_file_logging',
+                        action = 'store_true',
+                        help = 'Nothing will be logged to files. '
+                        'Model metrics are handled by the checkpoint_freq '
+                        'parameter and are independent of this.')
     
-    #Displayed Messages
-    parser.add_argument('-silent',
-                        action='store_true',
-                        help = 'Do not display progress messages')
     args = vars(parser.parse_args())
     # Command line args and hyperparms
     path_data = args['data_path']
+    path_output = args['output_path']
     path_sf = args['soundfont_path']
     synth_workers = args['synth_workers']
     par_train = args['partrain']
     batch_size = args['batch_size']
-    silent = args['silent']
     sequential = args['sequential']
     check_freq = args['checkpoint_freq']
     note_save_freq = args['note_save_freq']
+    verbosity = args['logging_level_console']
+    is_log_files = not args['disable_file_logging']
+    
+    #Configure Logging
+    #Add custom level
+    logging.DETAILED = 15
+    logging.addLevelName(logging.DETAILED, 'DETAILED')
+    def detailed(self, message, *args, **kws):
+        if self.isEnabledFor(logging.DETAILED):
+            # Yes, logger takes its '*args' as 'args'.
+            self._log(logging.DETAILED, message, args, **kws) 
+    logging.getLoggerClass().detailed = detailed
+    
+    
+    logger = logging.getLogger('AMT-SAGA')
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    if verbosity==3:
+        verbosity = logging.ERROR
+    elif verbosity==2:
+        verbosity = logging.INFO
+    elif verbosity==1:
+        verbosity = logging.DETAILED
+    elif verbosity==0:
+        verbosity = logging.DEBUG
+    
+    ch = logging.StreamHandler()
+    ch.setLevel(verbosity)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    
+    #Create debug and output folder
+    if not os.path.exists(path_output):
+        os.makedirs(path_output)
+    dirs = [PATH_MODEL_META,PATH_NOTES, PATH_CHECKPOINTS]
+    for d in dirs:
+        if not os.path.exists(os.path.join(path_output,d)):
+            os.makedirs(os.path.join(path_output,d))
+        
+    logger = logging.getLogger('AMT-SAGA.main')
+    #Attach files unless forbidden
+    if is_log_files:
+        f_debug = logging.FileHandler(os.path.join(path_output,'log_debug.log'))
+        f_debug.setLevel(logging.DEBUG)
+        f_debug.setFormatter(formatter)
+        logger.addHandler(f_debug)
+        
+#        f_info = logging.FileHandler(os.path.join(path_output,'log_info.log'))
+#        f_info.setLevel(logging.INFO)
+#        f_info.setFormatter(formatter)
+#        logger.addHandler(f_info)
+#        
+#        f_detailed = logging.FileHandler(os.path.join(path_output,'log_detailed.log'))
+#        f_detailed.setLevel(logging.DETAILED)
+#        f_detailed.setFormatter(formatter)
+#        logger.addHandler(f_detailed)
     
     #using the import here allows using the --help without loading the libraries
-    from util_train_test import Hyperparams
-    if sequential:
-        from training import train_sequential
-        p = Hyperparams(path_data, path_sf, 
-                    window_size_note_time=6,
-                    batch_size = 1,
-                    parallel_train= False,
-                    synth_worker_count= 1,
-                    checkpoint_frequency = check_freq)
-
-        train_sequential(p, not silent)
-    else:
-        from training import train_parallel
-        p = Hyperparams(path_data, path_sf, 
+    try:            
+        p = Hyperparams(path_data, path_sf, path_output = path_output,
+                        
                         batch_size = batch_size,
                         parallel_train=par_train,
                         synth_worker_count=synth_workers,
+                        
                         window_size_note_time=6,
+                        
+                        checkpoint_dir = os.path.join(path_output,PATH_CHECKPOINTS),
                         checkpoint_frequency = check_freq,
                         note_save_freq = note_save_freq)
-    
-        train_parallel(p, not silent)
+        logger.info('All hyperparemeters set, starting training')
+        if sequential:
+            from training import train_sequential
+            p.batch_size = 1
+            p.parallel_train= False
+            p.synth_worker_count= 1
+            train_sequential(p)
+        else:
+            from training import train_parallel
+            train_parallel(p)
+            
+    except Exception as e:
+        logger.error('Exception occured: {}'.format(str(e)))
+        logger.error(traceback.format_exc())
         
 
