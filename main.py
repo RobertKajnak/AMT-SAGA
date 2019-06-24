@@ -19,7 +19,8 @@ if __name__ == '__main__':
                                      formatter_class=\
                                      argparse.ArgumentDefaultsHelpFormatter)
     #Path and crucial files
-    parser.add_argument('-soundfont_path',nargs='?',
+    parser.add_argument('-soundfont_path',
+                        nargs='?',
                         default=os.path.join('..',
                                              'soundfonts','GM_soundfonts.sf2'),
                         help = 'The path to the soundfont file')
@@ -72,6 +73,12 @@ if __name__ == '__main__':
                         'and subtracted notes will be displayed. This can be '
                         'useful to see if no synthetizer error has occured')
     #Logging/Messages
+    parser.add_argument('-log_file_name',
+                        default = 'log.log',
+                        type = str,
+                        help = 'Filename used for logging. A suffix will be '
+                        'inserted before the last dot or if no extension is '
+                        'provided, at the end of the name')
     parser.add_argument('-logging_level_console',
                         default = 2,
                         type = int,
@@ -98,6 +105,7 @@ if __name__ == '__main__':
     sequential = args['sequential']
     check_freq = args['checkpoint_freq']
     note_save_freq = args['note_save_freq']
+    log_fn = args['log_file_name']
     verbosity = args['logging_level_console']
     is_log_files = not args['disable_file_logging']
     
@@ -139,18 +147,28 @@ if __name__ == '__main__':
             os.makedirs(os.path.join(path_output,d))
         
     #Attach files unless forbidden
-    if is_log_files:
-        f_debug = logging.FileHandler(os.path.join(path_output,'log_debug.log'))
+    if is_log_files:    
+        dot_pos = log_fn.rfind('.')
+        if dot_pos == -1:
+            fn_debug = log_fn + '_debug'
+            fn_info = log_fn + '_info'
+            fn_detailed = log_fn + '_detailed'
+        else:
+            fn_debug = log_fn[:dot_pos] + '_debug' + log_fn[dot_pos:]
+            fn_info = log_fn[:dot_pos] + '_info' + log_fn[dot_pos:]
+            fn_detailed = log_fn[:dot_pos] + '_detailed' + log_fn[dot_pos:]
+        
+        f_debug = logging.FileHandler(os.path.join(path_output,fn_debug))
         f_debug.setLevel(logging.DEBUG)
         f_debug.setFormatter(formatter)
         logger.addHandler(f_debug)
         
-        f_info = logging.FileHandler(os.path.join(path_output,'log_info.log'))
+        f_info = logging.FileHandler(os.path.join(path_output,fn_info))
         f_info.setLevel(logging.INFO)
         f_info.setFormatter(formatter)
         logger.addHandler(f_info)
         
-        f_detailed = logging.FileHandler(os.path.join(path_output,'log_detailed.log'))
+        f_detailed = logging.FileHandler(os.path.join(path_output,fn_detailed))
         f_detailed.setLevel(logging.DETAILED)
         f_detailed.setFormatter(formatter)
         logger.addHandler(f_detailed)
