@@ -169,7 +169,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         model.plot_model(os.path.join(params.path_output,
                                       PATH_MODEL_META,'pitch'+'.png'))
     if model_name == 'instrument':
-        logger = logging.getLogger('SAGA.instrument_class')
+        logger = logging.getLogger('AMT-SAGA.instrument_class')
         logger.info('Loading Instrument Classifier')
         model = InstrumentClassifier(params)
         model.plot_model(os.path.join(params.path_output,
@@ -194,7 +194,7 @@ def thread_training(samples_q, params,training_finished,
                     allow_parallel_training=False):
 
     b_i=0
-    logger = logging.getLogger('SAGA.training_master')
+    logger = logging.getLogger('AMT-SAGA.training_master')
     
     #Technically pipes may be better, but the ease of use outweighs the 
     #performance penalty, especially compared to audio generation and training
@@ -242,7 +242,7 @@ def init_sample_aquisition(samples_q):
 def thread_sample_aquisition(filename,params):
     fn = filename
     mid = note_sequence(fn[0])
-    logger = logging.getLogger('SAGA.sample_gen')
+    logger = logging.getLogger('AMT-SAGA.sample_gen')
 
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_input_shape/2)
