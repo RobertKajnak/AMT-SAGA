@@ -138,7 +138,6 @@ if __name__ == '__main__':
         if not os.path.exists(os.path.join(path_output,d)):
             os.makedirs(os.path.join(path_output,d))
         
-    logger = logging.getLogger('AMT-SAGA.main')
     #Attach files unless forbidden
     if is_log_files:
         f_debug = logging.FileHandler(os.path.join(path_output,'log_debug.log'))
@@ -146,15 +145,15 @@ if __name__ == '__main__':
         f_debug.setFormatter(formatter)
         logger.addHandler(f_debug)
         
-#        f_info = logging.FileHandler(os.path.join(path_output,'log_info.log'))
-#        f_info.setLevel(logging.INFO)
-#        f_info.setFormatter(formatter)
-#        logger.addHandler(f_info)
-#        
-#        f_detailed = logging.FileHandler(os.path.join(path_output,'log_detailed.log'))
-#        f_detailed.setLevel(logging.DETAILED)
-#        f_detailed.setFormatter(formatter)
-#        logger.addHandler(f_detailed)
+        f_info = logging.FileHandler(os.path.join(path_output,'log_info.log'))
+        f_info.setLevel(logging.INFO)
+        f_info.setFormatter(formatter)
+        logger.addHandler(f_info)
+        
+        f_detailed = logging.FileHandler(os.path.join(path_output,'log_detailed.log'))
+        f_detailed.setLevel(logging.DETAILED)
+        f_detailed.setFormatter(formatter)
+        logger.addHandler(f_detailed)
     
     #using the import here allows using the --help without loading the libraries
     try:            
