@@ -11,7 +11,6 @@ import os
 from multiprocessing import Process, Value, Queue, Lock, Pool
 from queue import Empty as EmptyException
 import logging
-import platform
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -20,7 +19,8 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 import util_dataset
 from util_audio import note_sequence
 from util_audio import audio_complete
-from util_train_test import relevant_notes,note_sample,PATH_MODEL_META,PATH_NOTES
+from util_train_test import relevant_notes,note_sample, key_pressed,\
+                            PATH_MODEL_META,PATH_NOTES
 
 import ProgressBar as PB
 
@@ -34,9 +34,6 @@ except:
             # Yes, logger takes its '*args' as 'args'.
             self._log(logging.DETAILED, message, args, **kws) 
     logging.Logger.detailed = detailed
-
-
-
 
 def train_sequential(params):
     """ DEPRECATED
@@ -248,14 +245,13 @@ def thread_training(samples_q, params,training_finished,
     while training_finished.value == 0:
         pitch_x,pitch_y = [],[]
         instrument_x,instrument_y = [],[]
-        for i in range(params.batch_size):
+        i=0
+        while training_finished.value == 0 and i<params.batch_size :
             try:
                 sample = samples_q.get(timeout=1)
             except EmptyException:
                 if training_finished.value==0:
                     continue
-                else:
-                    break
             except BrokenPipeError:
                 logger.debug('Broken Pipe Detected. Assuming training was '
                              'terminated.')
@@ -264,7 +260,8 @@ def thread_training(samples_q, params,training_finished,
             pitch_y.append(sample.pitch)
             instrument_x.append(sample.audio)
             instrument_y.append(sample.instrument)
-
+            i+=1
+            
         if training_finished.value == 0:
             try:
                 logger.debug('Sending Batch {}'.format(b_i))
@@ -281,11 +278,14 @@ def thread_training(samples_q, params,training_finished,
     proc_inst.join()
 #    print('threads joined')#DEBUG
     
-def init_sample_aquisition(samples_q,note_i):
+def init_sample_aquisition(samples_q,note_i,training_finished):
     global samples_q_g
     samples_q_g = samples_q
     global note_i_g
     note_i_g = note_i
+    global training_finished_g
+    training_finished_g = training_finished
+    
 
 def thread_sample_aquisition(filename,params):
     fn = filename
@@ -383,6 +383,10 @@ def thread_sample_aquisition(filename,params):
         else:#Otherwise the lock will cause race conditions
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
+        key = key_pressed(logger)
+        if key == ord('q'):
+            training_finished_g.value=2
+            
 # noinspection PyShadowingNames
 def train_parallel(params):
     """ Prepare data, training and test"""
@@ -410,7 +414,7 @@ def train_parallel(params):
     else:
         pool = Pool(processes = params.synth_worker_count,
                     initializer=init_sample_aquisition,
-                    initargs=(samples_q,note_index))  
+                    initargs=(samples_q,note_index,training_finished))  
         
         results = [pool.apply_async(thread_sample_aquisition, 
                                    args=(fn, params)
