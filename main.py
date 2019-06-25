@@ -63,6 +63,12 @@ if __name__ == '__main__':
                         ' the sequential approach')
     
     #Checkpoint & debug
+    parser.add_argument('-auto_continue',
+                        action = 'store_true',
+                        help = 'Attempt to continue from the last checkpoint '
+                        'and metrics. The latest files will be attempted to '
+                        'be loaded from the checkpoint directory '
+                        '(output/checkpoints)')
     parser.add_argument('-checkpoint_freq',
                         default = 200,
                         type = int,
@@ -101,10 +107,11 @@ if __name__ == '__main__':
     path_data = args['data_path']
     path_output = args['output_path']
     path_sf = args['soundfont_path']
+    sequential = args['sequential']
     synth_workers = args['synth_workers']
     par_train = args['partrain']
     batch_size = args['batch_size']
-    sequential = args['sequential']
+    autoload = args['auto_continue']
     check_freq = args['checkpoint_freq']
     note_save_freq = args['note_save_freq']
     log_fn = args['log_file_name']
@@ -187,7 +194,8 @@ if __name__ == '__main__':
                         
                         checkpoint_dir = os.path.join(path_output,PATH_CHECKPOINTS),
                         checkpoint_frequency = check_freq,
-                        note_save_freq = note_save_freq)
+                        note_save_freq = note_save_freq,
+                        autoload = autoload)
         logger.info('All hyperparemeters set, starting training')
         if sequential:
             from training import train_sequential
@@ -198,7 +206,7 @@ if __name__ == '__main__':
         else:
             from training import train_parallel
             train_parallel(p)
-            
+        logger.info('Program Terminated Gracefully')
     except Exception as e:
         logger.error('Exception occured: {}'.format(str(e)))
         logger.error(traceback.format_exc())

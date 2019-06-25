@@ -1,5 +1,23 @@
 import os
 
+def get_latest_file(directory, substring =''):
+    """Returns the full path to the file that was modified, from the 
+    directory, that also contains the substring specified.
+    params:
+        directory: the directory to be searched
+        substring: the files must contain this substring. Specify emptystring
+            to consider all files
+    returns:
+        full path to the file. If no matches are found, None is returned"""
+    
+    all_files = os.listdir(directory)
+    all_files = list(filter(lambda s: substring in s, all_files))
+    all_files = [os.path.join(str(directory),fn) for fn in all_files]
+    all_files.sort(key=os.path.getmtime)
+    if len(all_files)>0:
+        return all_files[-1]
+    else:
+        return None
 
 class DataManager():
     def __init__(self, path, 

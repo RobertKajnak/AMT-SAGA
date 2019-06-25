@@ -19,7 +19,8 @@ class Hyperparams:
                  parallel_train=False,
                  checkpoint_dir ='./data/checkpoints',
                  checkpoint_frequency = 200,
-                 note_save_freq=0):
+                 note_save_freq=0,
+                 autoload = False):
         self.N = N
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
@@ -47,6 +48,7 @@ class Hyperparams:
         self.path_output = path_output
         self.note_save_freq = note_save_freq
 
+        self.autoload = autoload
 
 def relevant_notes(sequence, offset, duration):
     notes_w, notes_target = sequence.get_notes(offset, offset + duration)

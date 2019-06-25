@@ -19,11 +19,10 @@ from pynput.keyboard import KeyCode, Listener
 #from durationdetector import DurationDetector as DurationDetector
 from pitch_classifier import pitch_classifier as PitchClassifier
 from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
-import util_dataset
+from util_dataset import DataManager, get_latest_file
 from util_audio import note_sequence
 from util_audio import audio_complete
-from util_train_test import relevant_notes,note_sample, key_pressed,\
-                            PATH_MODEL_META,PATH_NOTES
+from util_train_test import relevant_notes,note_sample, PATH_MODEL_META,PATH_NOTES
 
 import ProgressBar as PB
 
@@ -43,7 +42,7 @@ def train_sequential(params):
     Prepare data, training and test"""
     logger = logging.getLogger('AMT-SAGA.train_seq')
 
-    dm = util_dataset.DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
+    dm = DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
     
 #    onset_detector = OnsetDetector(params)
 #    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
@@ -167,25 +166,46 @@ def thread_classification(model_name,params,q_samples, training_finished,
                           training_lock = None):
     i_b = 0
     training_lock and training_lock.acquire()
+    
     if model_name == 'pitch':
         logger = logging.getLogger('AMT-SAGA.pitch_class')
         logger.info('Loading Pitch Classifier')
-        model = PitchClassifier(params)
-        model.plot_model(os.path.join(params.path_output,
-                                      PATH_MODEL_META,'pitch'+'.png'))
+        prefix  = 'checkpoint_pitch'
+        model = PitchClassifier(params, checkpoint_prefix= prefix)
     if model_name == 'instrument':
         logger = logging.getLogger('AMT-SAGA.instrument_class')
         logger.info('Loading Instrument Classifier')
-        model = InstrumentClassifier(params)
-        model.plot_model(os.path.join(params.path_output,
-                                      PATH_MODEL_META,'instrument'+'.png'))
+        prefix = 'checkpoint_intrument'
+        model = InstrumentClassifier(params, checkpoint_prefix= prefix)
         
     if model_name == 'instrument_focused':
         logger = logging.getLogger('AMT-SAGA.instrument_focused_class')
         logger.info('Loading Focused Instrument Classifier')
-        model = InstrumentClassifier(params,checkpoint_prefix='intrument_focused')
-        model.plot_model(os.path.join(params.path_output,
-                                      PATH_MODEL_META,'instrument_focused'+'.png'))
+        prefix = 'checkpoint_intrument_focused'
+        model = InstrumentClassifier(params, checkpoint_prefix= prefix)
+    
+    if params.autoload:
+        fn_check = get_latest_file(params.checkpoint_dir, prefix)
+        check_ind = int(fn_check[fn_check.rfind('_')+1:fn_check.rfind('.')])
+        fn_metr = get_latest_file(params.checkpoint_dir,'metrics_logs')
+        metr_ind = fn_metr[:fn_metr.rfind('_training')]
+        metr_ind = int(metr_ind[metr_ind.rfind('_')+1:])
+        if fn_metr is not None and fn_check is not None and \
+            check_ind==metr_ind:
+            model.load_weights(fn_check)
+            model.load_metrics(params.checkpoint_dir, index=metr_ind,
+                              training=True, test = False, use_csv=False,
+                              load_metric_names = False)
+            model.current_batch = check_ind
+            i_b = check_ind
+            logger.info('{} continuing from batch {}'.
+                        format(model_name,check_ind))
+        else:
+            raise ValueError('Filenames missing of mismatched: {} {}'.
+                             format(fn_check,fn_metr))
+            
+    model.plot_model(os.path.join(params.path_output,
+                                  PATH_MODEL_META, model_name+'.png'))
     
     training_lock and training_lock.release()
 #    onset_detector = OnsetDetector(params)
@@ -215,7 +235,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         logger.info('Training terminated, saving {}'.format(model_name))
 #    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
 #                     training=True, test = False, use_csv=False, 
-#                     load_metric_names=True)
+#                     load_metric_names=True) #DEBUG
 #    model.current_batch=i_b#DEBUG
     model.save_checkpoint()
 #    print('Checkpoint finished') #DEBUG
@@ -401,7 +421,7 @@ def thread_sample_aquisition(filename,params):
 def train_parallel(params):
     """ Prepare data, training and test"""
     logger = logging.getLogger('AMT-SAGA.master')
-    dm = util_dataset.DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
+    dm = DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
         
     samples_q = Queue(params.batch_size)
 
