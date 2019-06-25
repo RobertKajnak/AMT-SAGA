@@ -437,27 +437,7 @@ class res_net:
                     self.metrics_names = list(npz['names'])
             self.metrics_test = [list(m) for m in self.metrics_test]
     
-    def train(self,x,y):
-        """Wrapper for train_on_batch. 
-        Rescales output when specified in the constructor.
-        Creates checkpoints when needed.
-        Sample and class weights constant
-        Returns the scaled predicted value
-        """
-#        self.logger.debug('x format = {}'.format(x[0].shape))
-#        self.logger.debug('y={}'.format(y))        
-        if self.output_classes == 1:
-            y = self._scale_output_to_activation(y)
-        
-        #self.logger.debug(y)
-        #TODO: Check if it is possible to only update when the error values are small
-        self.metrics_train.append(
-                self.model.train_on_batch(
-                        x,y,sample_weight=None, class_weight=None)
-                )
-            
-        if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
-            
+    def save_checkpoint(self):
             self.logger.info('Saving checkpoint {}'.format(self.current_batch))
             progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
             avgs = np.average(self.metrics_train[
@@ -478,6 +458,28 @@ class res_net:
             #either (10 MB vs 100Kb)
             self.save_metrics(self.checkpoint_dir, index=self.current_batch,
                               training=True, test = False, use_csv=False)
+    
+    def train(self,x,y):
+        """Wrapper for train_on_batch. 
+        Rescales output when specified in the constructor.
+        Creates checkpoints when needed.
+        Sample and class weights constant
+        Returns the scaled predicted value
+        """
+#        self.logger.debug('x format = {}'.format(x[0].shape))
+#        self.logger.debug('y={}'.format(y))        
+        if self.output_classes == 1:
+            y = self._scale_output_to_activation(y)
+        
+        #self.logger.debug(y)
+        #TODO: Check if it is possible to only update when the error values are small
+        self.metrics_train.append(
+                self.model.train_on_batch(
+                        x,y,sample_weight=None, class_weight=None)
+                )
+            
+        if self.checkpoint_dir and (self.current_batch % self.checkpoint_frequency==0):
+            self.save_checkpoint()
         self.current_batch += 1
         
         return self.metrics_train[-1][self.metrics_true_ind]
