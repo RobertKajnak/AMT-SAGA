@@ -9,7 +9,9 @@ Created on Sat Jun 22 11:13:26 2019
 
 import os
 from multiprocessing import Process, Value, Queue, Lock, Pool
+from queue import Empty as EmptyException
 import logging
+import platform
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -32,6 +34,9 @@ except:
             # Yes, logger takes its '*args' as 'args'.
             self._log(logging.DETAILED, message, args, **kws) 
     logging.Logger.detailed = detailed
+
+
+
 
 def train_sequential(params):
     """ DEPRECATED
@@ -174,6 +179,14 @@ def thread_classification(model_name,params,q_samples, training_finished,
         model = InstrumentClassifier(params)
         model.plot_model(os.path.join(params.path_output,
                                       PATH_MODEL_META,'instrument'+'.png'))
+        
+    if model_name == 'instrument_focused':
+        logger = logging.getLogger('AMT-SAGA.instrument_focused_class')
+        logger.info('Loading Focused Instrument Classifier')
+        model = InstrumentClassifier(params,checkpoint_prefix='intrument_focused')
+        model.plot_model(os.path.join(params.path_output,
+                                      PATH_MODEL_META,'instrument_focused'+'.png'))
+    
     training_lock and training_lock.release()
 #    onset_detector = OnsetDetector(params)
 #    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
@@ -181,14 +194,30 @@ def thread_classification(model_name,params,q_samples, training_finished,
 #    duration_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'duration'+'.png'))
 
     while training_finished.value == 0:
-        sample = q_samples.get()
+        try:
+            sample = q_samples.get(timeout=1)
+        except EmptyException:
+            continue
+        except BrokenPipeError:
+            logger.debug('Broken Pipe Detected. Assuming training was '
+                         'terminated.')
+            break
         training_lock and training_lock.acquire()
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-#        model.classify(sample[0],sample[1])
+        model.classify(sample[0],sample[1]) #DEBUG
         training_lock and training_lock.release()
-    
+        
+    if training_finished.value == 1:
+        logger.info('Training finished, saving {}'.format(model_name))
+    else:
+        logger.info('Training terminated, saving {}'.format(model_name))
+#    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
+#                     training=True, test = False, use_csv=False, 
+#                     load_metric_names=True) #DEBUG
+    model.save_checkpoint()
+#    print('Checkpoint finished') #DEBUG
 
 def thread_training(samples_q, params,training_finished, 
                     allow_parallel_training=False):
@@ -220,20 +249,37 @@ def thread_training(samples_q, params,training_finished,
         pitch_x,pitch_y = [],[]
         instrument_x,instrument_y = [],[]
         for i in range(params.batch_size):
-            sample = samples_q.get()
+            try:
+                sample = samples_q.get(timeout=1)
+            except EmptyException:
+                if training_finished.value==0:
+                    continue
+                else:
+                    break
+            except BrokenPipeError:
+                logger.debug('Broken Pipe Detected. Assuming training was '
+                             'terminated.')
+                break
             pitch_x.append(sample.audio)
             pitch_y.append(sample.pitch)
             instrument_x.append(sample.audio)
             instrument_y.append(sample.instrument)
 
-        logger.debug('Sending Batch {}'.format(b_i))
-        b_i += 1
+        if training_finished.value == 0:
+            try:
+                logger.debug('Sending Batch {}'.format(b_i))
+                b_i += 1
+                q_pitch.put((pitch_x,pitch_y))
+                q_inst.put((instrument_x,instrument_y))
+            except BrokenPipeError:
+                logger.debug('Broken Pipe Detected. Assuming training was '
+                             'terminated.')
+                break
         
-        q_pitch.put((pitch_x,pitch_y))
-        q_inst.put((instrument_x,instrument_y))
-    
+#    print('thread_training finished')#DEBUG
     proc_pitch.join()
     proc_inst.join()
+#    print('threads joined')#DEBUG
     
 def init_sample_aquisition(samples_q,note_i):
     global samples_q_g
@@ -302,7 +348,12 @@ def thread_sample_aquisition(filename,params):
         sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
    
-        samples_q_g.put(sample)
+        try:
+            samples_q_g.put(sample)
+        except BrokenPipeError:
+            logger.debug('Broken Pipe Detected. Assuming training was '
+                         'terminated.')
+            break
         
         # subtract correct note for training:
         note_guessed = note_sequence()
@@ -368,6 +419,6 @@ def train_parallel(params):
             result.get()
     training_finished.value = 1 
     logger.info('Training finished!')
-    proc_training.terminate()
+#    proc_training.terminate()
     
     proc_training.join()
