@@ -15,7 +15,9 @@ from util_train_test import Hyperparams,PATH_MODEL_META,PATH_NOTES,\
     PATH_CHECKPOINTS
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='AMT-SAGA entry point.',
+    parser = argparse.ArgumentParser(description='AMT-SAGA entry point. '
+                                     'Press q to stop the training process '
+                                     'and create a save point',
                                      formatter_class=\
                                      argparse.ArgumentDefaultsHelpFormatter)
     #Path and crucial files

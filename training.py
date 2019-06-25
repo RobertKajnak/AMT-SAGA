@@ -10,7 +10,10 @@ Created on Sat Jun 22 11:13:26 2019
 import os
 from multiprocessing import Process, Value, Queue, Lock, Pool
 from queue import Empty as EmptyException
+from queue import Full as FullException
 import logging
+
+from pynput.keyboard import KeyCode, Listener
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -203,7 +206,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-        model.classify(sample[0],sample[1]) #DEBUG
+        model.classify(sample[0],sample[1]) #!DEBUG
         training_lock and training_lock.release()
         
     if training_finished.value == 1:
@@ -212,7 +215,8 @@ def thread_classification(model_name,params,q_samples, training_finished,
         logger.info('Training terminated, saving {}'.format(model_name))
 #    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
 #                     training=True, test = False, use_csv=False, 
-#                     load_metric_names=True) #DEBUG
+#                     load_metric_names=True)
+#    model.current_batch=i_b#DEBUG
     model.save_checkpoint()
 #    print('Checkpoint finished') #DEBUG
 
@@ -312,7 +316,7 @@ def thread_sample_aquisition(filename,params):
               format(fn,ex))
         return
         
-    while offset < mid.duration:
+    while offset < mid.duration and training_finished_g.value==0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         # training
         if note_gold is not None:
@@ -347,13 +351,22 @@ def thread_sample_aquisition(filename,params):
 
         sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
-   
-        try:
-            samples_q_g.put(sample)
-        except BrokenPipeError:
-            logger.debug('Broken Pipe Detected. Assuming training was '
-                         'terminated.')
-            break
+        
+        
+        while training_finished_g.value==0:
+            try:
+                samples_q_g.put(sample,timeout=1)
+            except FullException:
+                if training_finished_g.value==0:
+                    continue
+                else:
+                    return
+            except BrokenPipeError:
+                logger.debug('Broken Pipe Detected. Assuming training was '
+                             'terminated.')
+                return
+            else:
+                break
         
         # subtract correct note for training:
         note_guessed = note_sequence()
@@ -383,9 +396,6 @@ def thread_sample_aquisition(filename,params):
         else:#Otherwise the lock will cause race conditions
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
-        key = key_pressed(logger)
-        if key == ord('q'):
-            training_finished_g.value=2
             
 # noinspection PyShadowingNames
 def train_parallel(params):
@@ -401,7 +411,18 @@ def train_parallel(params):
                                                           training_finished,
                                                           params.parallel_train))
     proc_training.start()
-
+    
+    key_q = KeyCode.from_char('q')
+    key_Q = KeyCode.from_char('Q')
+    def on_press(key):
+        if key==key_q or key==key_Q:
+            training_finished.value=2
+        return
+    listener = Listener(
+            on_press=on_press,
+            on_release=None)
+    listener.start()
+        
     #Pre-loading sounfont here means that threads don't use the memory separately
     #And other tests have shown that it is thread-safe
     note_sequence(sf2_path = params.sf_path) 
@@ -426,3 +447,4 @@ def train_parallel(params):
 #    proc_training.terminate()
     
     proc_training.join()
+    listener.stop()
