@@ -137,7 +137,7 @@ def train_sequential(params):
                     logger.detailed('Saving sample {} to {}'.format(note_i,fn_base))
                     
                     audio_w.save(fn_base+'_full_window.flac')
-                    audio_sw.save(fn_base+'_short_window.flac')
+#                    audio_sw.save(fn_base+'_short_window.flac')
                     note_guessed.save(fn_base + '_guessed.mid')
                     ac_note_guessed.save(fn_base+'_guessed.flac')
                     
@@ -235,9 +235,11 @@ def thread_training(samples_q, params,training_finished,
     proc_pitch.join()
     proc_inst.join()
     
-def init_sample_aquisition(samples_q):
+def init_sample_aquisition(samples_q,note_i):
     global samples_q_g
     samples_q_g = samples_q
+    global note_i_g
+    note_i_g = note_i
 
 def thread_sample_aquisition(filename,params):
     fn = filename
@@ -251,7 +253,6 @@ def thread_sample_aquisition(filename,params):
     offset = 0
     
     logger.info('Generating wav for midi {}'.format(fn))
-    note_i = 1
     try:
         mid_wf = audio_complete(mid.render(), params.N - 2)
         # TODO - Remove drums - hopefully it can learn to ignore it though
@@ -311,23 +312,26 @@ def thread_sample_aquisition(filename,params):
         
         ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
         
+        print(note_i_g.value % params.note_save_freq)
         if params.note_save_freq:
-            note_i += 1
-            if note_i % params.note_save_freq == 0:
-                fn_base = os.path.join(params.path_output, PATH_NOTES, 
-                                       os.path.split(fn[0])[-1][:-4] + 
-                                       str(note_i))
-                logger.detailed('Saving sample {} to {}'.format(note_i,fn_base))
+            with note_i_g.get_lock():
+                note_i_g.value += 1
+                if note_i_g.value % params.note_save_freq == 0:
+                    fn_base = os.path.join(params.path_output, PATH_NOTES, 
+                                           os.path.split(fn[0])[-1][:-4] + 
+                                           str(note_i_g.value))
+                    logger.detailed('Saving sample {} to {}'.
+                                    format(note_i_g.value,fn_base))
+                    
+                    audio_w.save(fn_base+'_full_window.flac')
+    #                audio_sw.save(fn_base+'_short_window.flac')
+                    note_guessed.save(fn_base + '_guessed.mid')
+                    ac_note_guessed.save(fn_base+'_guessed.flac')
                 
-                audio_w.save(fn_base+'_full_window.flac')
-                audio_sw.save(fn_base+'_short_window.flac')
-                note_guessed.save(fn_base + '_guessed.mid')
-                ac_note_guessed.save(fn_base+'_guessed.flac')
-                
-        audio_w.subtract(ac_note_guessed, offset=onset_gold)
-
-        if (params.note_save_freq!=0) and (note_i % params.note_save_freq == 0):
-            audio_w.save(fn_base + '_after_subtr.flac')
+                    audio_w.subtract(ac_note_guessed, offset=onset_gold)
+                    audio_w.save(fn_base + '_after_subtr.flac')
+        else:#Otherwise the lock will cause race conditions
+            audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
 # noinspection PyShadowingNames
 def train_parallel(params):
@@ -347,15 +351,15 @@ def train_parallel(params):
     #And other tests have shown that it is thread-safe
     note_sequence(sf2_path = params.sf_path) 
     dm.set_set('training') 
-    
+    note_index = Value('L',1)
     if params.synth_worker_count == 1:
-        init_sample_aquisition(samples_q)
+        init_sample_aquisition(samples_q,note_index)
         for fn in dm:
             thread_sample_aquisition(fn, params)
     else:
         pool = Pool(processes = params.synth_worker_count,
                     initializer=init_sample_aquisition,
-                    initargs=(samples_q,))  
+                    initargs=(samples_q,note_index))  
         
         results = [pool.apply_async(thread_sample_aquisition, 
                                    args=(fn, params)
