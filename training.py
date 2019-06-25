@@ -186,7 +186,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-        model.classify(sample[0],sample[1])
+#        model.classify(sample[0],sample[1])
         training_lock and training_lock.release()
     
 
@@ -312,14 +312,13 @@ def thread_sample_aquisition(filename,params):
         
         ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
         
-        print(note_i_g.value % params.note_save_freq)
         if params.note_save_freq:
             with note_i_g.get_lock():
                 note_i_g.value += 1
                 if note_i_g.value % params.note_save_freq == 0:
                     fn_base = os.path.join(params.path_output, PATH_NOTES, 
-                                           os.path.split(fn[0])[-1][:-4] + 
-                                           str(note_i_g.value))
+                                           os.path.split(fn[0])[-1][:-4] +
+                                           '_' + str(note_i_g.value))
                     logger.detailed('Saving sample {} to {}'.
                                     format(note_i_g.value,fn_base))
                     
@@ -336,6 +335,7 @@ def thread_sample_aquisition(filename,params):
 # noinspection PyShadowingNames
 def train_parallel(params):
     """ Prepare data, training and test"""
+    logger = logging.getLogger('AMT-SAGA.master')
     dm = util_dataset.DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
         
     samples_q = Queue(params.batch_size)
@@ -366,6 +366,8 @@ def train_parallel(params):
                                    ) for fn in dm]
         for result in results:
             result.get()
-    training_finished.value = 1        
-
+    training_finished.value = 1 
+    logger.info('Training finished!')
+    proc_training.terminate()
+    
     proc_training.join()

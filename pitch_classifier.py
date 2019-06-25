@@ -11,7 +11,7 @@ from RDCNN import res_net
 
 
 class pitch_classifier(res_net):
-    def __init__(self,params):
+    def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch'):
         super().__init__(input_shapes=[(params.N / 2, params.pitch_input_shape, 1)],
                          kernel_sizes=params.kernel_sizes, pool_sizes=params.pool_sizes,
                          output_classes=1,
@@ -25,7 +25,7 @@ class pitch_classifier(res_net):
                          
                          checkpoint_dir=params.checkpoint_dir, 
                          checkpoint_frequency=params.checkpoint_frequency,
-                         checkpoint_prefix='checkpoint_onset_',
+                         checkpoint_prefix= checkpoint_prefix,
                          metrics=[],
                          
                          logging_parent = 'AMT-SAGA')
