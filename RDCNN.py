@@ -107,17 +107,32 @@ class res_net:
             starting_checkpoint_index: specify this to continue batch 
                 numbering from a previous point
                 
-            logging_parent: sets the verbosity of the network. Uses the default
-                values from logging library. 
-                specifying a value other than None will attach a logger to 
-                the stdout with the specified level
+            logging_parent: sets the verbosity of the network. 
+                a None, 1 or 2 will attach a logger to stdout, if no hanlders
+                are attached yet. If there are, their level will be modified
+                None == debug, 1==info, 2==error
+                specifying a string will attempt to add a logger to 
+                {logginging_parent}.res_net
+                
         '''
         
-        if logging_parent is None:    
+        if logging_parent is None or \
+            logging_parent == 1 or logging_parent==2:
             self.logger = logging.getLogger('res_net')
-            ch = logging.StreamHandler()
-            ch.setLevel(logging.DEBUG)
-            self.logger.addHandler(ch)
+            self.logger.setLevel(logging.DEBUG)
+            if self.logger.hasHandlers():
+                ch = self.logger.handlers[0]
+            else:
+                ch = logging.StreamHandler()
+                self.logger.addHandler(ch)
+            
+            if logging_parent == 1:
+                ch.setLevel(logging.INFO)
+            elif logging_parent == 2:    
+                ch.setLevel(logging.ERROR)
+            else:    
+                ch.setLevel(logging.DEBUG)
+                
         else:
             self.logger = logging.getLogger(logging_parent + '.res_net')
         
@@ -439,11 +454,22 @@ class res_net:
     
     def save_checkpoint(self):
             self.logger.info('Saving checkpoint {}'.format(self.current_batch))
-            progress_str = 'Current progress over last checkpoint ({} batches): '.format(self.checkpoint_frequency)
+            if self.current_batch-self.checkpoint_frequency>0:
+                batch_start = self.current_batch-self.checkpoint_frequency
+            else:
+                batch_start = 0
+                
+            progress_str = ('Metrics avaraged over the last '
+                            '{} batches: ').format(
+                                    self.current_batch-batch_start)
+            
             avgs = np.average(self.metrics_train[
-                            self.current_batch-self.checkpoint_frequency:
-                            self.current_batch],axis=0)
-            for idx,metric_name in enumerate(self.metrics_names[:-2]):
+                                batch_start:self.current_batch],axis=0)
+            metr_inds = []
+            for idx,mn in enumerate(self.metrics_names):
+                if 'y_pred' not in mn and 'y_true' not in mn:
+                    metr_inds.append((idx,mn))
+            for idx,metric_name in metr_inds:
                 progress_str += '{}: {:.3f} '.format(metric_name,avgs[idx])
             self.logger.info(progress_str)
                 
@@ -556,7 +582,8 @@ class res_net:
             return y
     
     def _get_metric_ind(self,metric_string):
-        """Return the index (in the name list) of the metric requested"""
+        """Return the index (in the name list) of the metric requested.
+        Returns None if metric is not found"""
         for ind,m_name in enumerate(self.metrics_names):
             if metric_string==m_name:
                 break;
