@@ -10,7 +10,7 @@ Dataset: https://colinraffel.com/projects/lmd/
 import argparse
 import os
 import logging
-import traceback
+
 from util_train_test import Hyperparams,PATH_MODEL_META,PATH_NOTES,\
     PATH_CHECKPOINTS
 
@@ -196,7 +196,8 @@ if __name__ == '__main__':
                         checkpoint_frequency = check_freq,
                         note_save_freq = note_save_freq,
                         autoload = autoload)
-        logger.info('All hyperparemeters set, starting training')
+        args_str = '\n' + '\n'.join('{} = {}'.format(k, v) for k, v in args.items())
+        logger.info('All hyperparemeters set, starting training: {}'.format(args_str))
         if sequential:
             from training import train_sequential
             p.batch_size = 1
@@ -206,9 +207,8 @@ if __name__ == '__main__':
         else:
             from training import train_parallel
             train_parallel(p)
-        logger.info('Program Terminated Gracefully')
-    except Exception as e:
-        logger.error('Exception occured: {}'.format(str(e)))
-        logger.error(traceback.format_exc())
+        logger.info('Main Thread Terminated Gracefully')
+    except Exception:
+        logger.exception('Exception occured in thread handler')
         
 

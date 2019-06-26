@@ -12,6 +12,7 @@ from multiprocessing import Process, Value, Queue, Lock, Pool
 from queue import Empty as EmptyException
 from queue import Full as FullException
 import logging
+from functools import wraps
 
 from pynput.keyboard import KeyCode, Listener
 
@@ -36,6 +37,19 @@ except:
             # Yes, logger takes its '*args' as 'args'.
             self._log(logging.DETAILED, message, args, **kws) 
     logging.Logger.detailed = detailed
+
+def logged_thread(func):
+    @wraps(func)
+    def wrapper(*args,**kwargs):
+        logger = logging.getLogger('AMT-SAGA.thread_logger')
+        try:
+            return func(*args,**kwargs)
+        except Exception:
+            logger.exception('Unexpected Exception occured in function {}'.
+                             format(func.__name__))
+            return None
+        
+    return wrapper
 
 def train_sequential(params):
     """ DEPRECATED
@@ -162,6 +176,7 @@ def train_sequential(params):
         sheet.save(fn_result)
 #        audio_complete(sheet.render(sf_path), params.N - 2).save(fn_result + '.flac')
 
+@logged_thread
 def thread_classification(model_name,params,q_samples, training_finished, 
                           training_lock = None):
     i_b = 0
@@ -226,82 +241,21 @@ def thread_classification(model_name,params,q_samples, training_finished,
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-        model.classify(sample[0],sample[1]) #!DEBUG
+#        model.classify(sample[0],sample[1]) #!DEBUG
         training_lock and training_lock.release()
         
     if training_finished.value == 1:
         logger.info('Training finished, saving {}'.format(model_name))
     else:
         logger.info('Training terminated, saving {}'.format(model_name))
-#    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
-#                     training=True, test = False, use_csv=False, 
-#                     load_metric_names=True) #DEBUG
-#    model.current_batch=i_b#DEBUG
+    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
+                     training=True, test = False, use_csv=False, 
+                     load_metric_names=True) #DEBUG
+    model.current_batch=i_b#DEBUG
     model.save_checkpoint()
-#    print('Checkpoint finished') #DEBUG
-
-def thread_training(samples_q, params,training_finished, 
-                    allow_parallel_training=False):
-
-    b_i=0
-    logger = logging.getLogger('AMT-SAGA.training_master')
+    print('Checkpoint finished') #DEBUG
     
-    #Technically pipes may be better, but the ease of use outweighs the 
-    #performance penalty, especially compared to audio generation and training
-    q_pitch = Queue(1)
-    q_inst = Queue(1)
-    if not allow_parallel_training:
-        training_lock = Lock()
-    else:
-        training_lock = None
-    
-    proc_pitch = Process(target=thread_classification, 
-                            args=('pitch',params, q_pitch,
-                                  training_finished,
-                                  training_lock))
-    proc_inst = Process(target=thread_classification, 
-                        args=('instrument',params, q_inst,
-                              training_finished,
-                              training_lock))
-    proc_pitch.start()
-    proc_inst.start()
-    
-    while training_finished.value == 0:
-        pitch_x,pitch_y = [],[]
-        instrument_x,instrument_y = [],[]
-        i=0
-        while training_finished.value == 0 and i<params.batch_size :
-            try:
-                sample = samples_q.get(timeout=1)
-            except EmptyException:
-                if training_finished.value==0:
-                    continue
-            except BrokenPipeError:
-                logger.debug('Broken Pipe Detected. Assuming training was '
-                             'terminated.')
-                break
-            pitch_x.append(sample.audio)
-            pitch_y.append(sample.pitch)
-            instrument_x.append(sample.audio)
-            instrument_y.append(sample.instrument)
-            i+=1
-            
-        if training_finished.value == 0:
-            try:
-                logger.debug('Sending Batch {}'.format(b_i))
-                b_i += 1
-                q_pitch.put((pitch_x,pitch_y))
-                q_inst.put((instrument_x,instrument_y))
-            except BrokenPipeError:
-                logger.debug('Broken Pipe Detected. Assuming training was '
-                             'terminated.')
-                break
-        
-#    print('thread_training finished')#DEBUG
-    proc_pitch.join()
-    proc_inst.join()
-#    print('threads joined')#DEBUG
-    
+@logged_thread
 def init_sample_aquisition(samples_q,note_i,training_finished):
     global samples_q_g
     samples_q_g = samples_q
@@ -310,7 +264,7 @@ def init_sample_aquisition(samples_q,note_i,training_finished):
     global training_finished_g
     training_finished_g = training_finished
     
-
+@logged_thread
 def thread_sample_aquisition(filename,params):
     fn = filename
     mid = note_sequence(fn[0])
@@ -416,7 +370,69 @@ def thread_sample_aquisition(filename,params):
         else:#Otherwise the lock will cause race conditions
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
+@logged_thread
+def thread_training(samples_q, params,training_finished, 
+                    allow_parallel_training=False):
+
+    b_i=0
+    logger = logging.getLogger('AMT-SAGA.training_master')
+    
+    #Technically pipes may be better, but the ease of use outweighs the 
+    #performance penalty, especially compared to audio generation and training
+    q_pitch = Queue(1)
+    q_inst = Queue(1)
+    if not allow_parallel_training:
+        training_lock = Lock()
+    else:
+        training_lock = None
+    
+    proc_pitch = Process(target=thread_classification, 
+                            args=('pitch',params, q_pitch,
+                                  training_finished,
+                                  training_lock))
+    proc_inst = Process(target=thread_classification, 
+                        args=('instrument',params, q_inst,
+                              training_finished,
+                              training_lock))
+    proc_pitch.start()
+    proc_inst.start()
+    
+    while training_finished.value == 0:
+        pitch_x,pitch_y = [],[]
+        instrument_x,instrument_y = [],[]
+        i=0
+        while training_finished.value == 0 and i<params.batch_size :
+            try:
+                sample = samples_q.get(timeout=1)
+            except EmptyException:
+                if training_finished.value==0:
+                    continue
+            except BrokenPipeError:
+                logger.debug('Broken Pipe Detected. Assuming training was '
+                             'terminated.')
+                break
+            pitch_x.append(sample.audio)
+            pitch_y.append(sample.pitch)
+            instrument_x.append(sample.audio)
+            instrument_y.append(sample.instrument)
+            i+=1
             
+        if training_finished.value == 0:
+            try:
+                logger.debug('Sending Batch {}'.format(b_i))
+                b_i += 1
+                q_pitch.put((pitch_x,pitch_y))
+                q_inst.put((instrument_x,instrument_y))
+            except BrokenPipeError:
+                logger.debug('Broken Pipe Detected. Assuming training was '
+                             'terminated.')
+                break
+        
+    print('thread_training finished')#DEBUG
+    proc_pitch.join()
+    proc_inst.join()
+    print('threads joined')#DEBUG
+
 # noinspection PyShadowingNames
 def train_parallel(params):
     """ Prepare data, training and test"""
@@ -463,8 +479,11 @@ def train_parallel(params):
         for result in results:
             result.get()
     training_finished.value = 1 
+    pool.close()
+    pool.join()
+    proc_training.join()
+    listener.stop()
+    
     logger.info('Training finished!')
 #    proc_training.terminate()
     
-    proc_training.join()
-    listener.stop()
