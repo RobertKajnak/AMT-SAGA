@@ -14,7 +14,7 @@ from queue import Full as FullException
 import logging
 from functools import wraps
 
-from pynput.keyboard import KeyCode, Listener
+from pynput.keyboard import KeyCode, Key, Listener
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -241,19 +241,18 @@ def thread_classification(model_name,params,q_samples, training_finished,
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-#        model.classify(sample[0],sample[1]) #!DEBUG
+        model.classify(sample[0],sample[1]) #!DEBUG
         training_lock and training_lock.release()
         
     if training_finished.value == 1:
         logger.info('Training finished, saving {}'.format(model_name))
     else:
         logger.info('Training terminated, saving {}'.format(model_name))
-    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
-                     training=True, test = False, use_csv=False, 
-                     load_metric_names=True) #DEBUG
-    model.current_batch=i_b#DEBUG
+#    model.load_metrics(directory='/home/hesiris/Documents/Thesis/AMT-SAGA/output/checkpoints/',prefix='metrics_logs_', index = 3,
+#                     training=True, test = False, use_csv=False, 
+#                     load_metric_names=True) #DEBUG
+#    model.current_batch=len(model.metrics_train)-1#DEBUG
     model.save_checkpoint()
-    print('Checkpoint finished') #DEBUG
     
 @logged_thread
 def init_sample_aquisition(samples_q,note_i,training_finished):
@@ -325,8 +324,7 @@ def thread_sample_aquisition(filename,params):
 
         sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
-        
-        
+                
         while training_finished_g.value==0:
             try:
                 samples_q_g.put(sample,timeout=1)
@@ -428,10 +426,8 @@ def thread_training(samples_q, params,training_finished,
                              'terminated.')
                 break
         
-    print('thread_training finished')#DEBUG
     proc_pitch.join()
     proc_inst.join()
-    print('threads joined')#DEBUG
 
 # noinspection PyShadowingNames
 def train_parallel(params):
@@ -448,15 +444,23 @@ def train_parallel(params):
                                                           params.parallel_train))
     proc_training.start()
     
+    held_down = set()
     key_q = KeyCode.from_char('q')
     key_Q = KeyCode.from_char('Q')
     def on_press(key):
-        if key==key_q or key==key_Q:
+        held_down.add(key)
+        if (key==key_q or key==key_Q) \
+                and Key.ctrl in held_down and Key.alt in held_down:
             training_finished.value=2
-        return
+        
+    def on_release(key):
+        try:
+            held_down.remove(key)
+        except KeyError:
+            pass
     listener = Listener(
             on_press=on_press,
-            on_release=None)
+            on_release=on_release)
     listener.start()
         
     #Pre-loading sounfont here means that threads don't use the memory separately
