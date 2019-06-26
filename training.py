@@ -51,6 +51,7 @@ def logged_thread(func):
         
     return wrapper
 
+@logged_thread
 def train_sequential(params):
     """ DEPRECATED
     Prepare data, training and test"""
@@ -89,6 +90,7 @@ def train_sequential(params):
 
         logger.info('Generating wav for midi {}'.format(fn))
         mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
+        mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick
         # TODO - Remove drums - hopefully it can learn to ignore it though
         # TODO -  Add random instrument shifts
             
@@ -118,7 +120,6 @@ def train_sequential(params):
                 
                 audio_w_new = mid_wf.section(offset+halfwindow_time,
                                              None, halfwindow_frames)
-                audio_w_new.mag # Evaluate mag to prime it for the NN. Efficiency trick
                 #Otherwise the F would be calculated for both
                 audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
                 audio_w.concat_power(audio_w_new)
@@ -278,7 +279,9 @@ def thread_sample_aquisition(filename,params):
     logger.info('Generating wav for midi {}'.format(fn))
     try:
         mid_wf = audio_complete(mid.render(), params.N - 2)
-        # TODO - Remove drums - hopefully it can learn to ignore it though
+        mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
+        #Also prevents problems if the first section is complete silence
+        
         # TODO -  Add random instrument shifts
                 
         audio_w = mid_wf.section(offset, None, params.timing_input_shape)
@@ -303,24 +306,26 @@ def thread_sample_aquisition(filename,params):
         else:
             onset_gold = offset + halfwindow_time
 
-        # use correct value to move window
-        if onset_gold >= halfwindow_time:                
-            offset += halfwindow_time
-            
-            audio_w_new = mid_wf.section(offset+halfwindow_time,
-                                         None, halfwindow_frames)
-            audio_w_new.mag # Evaluate mag to prime it for the NN. Efficiency trick
-            #Otherwise the F would be calculated for both
-            audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
-            audio_w.concat_power(audio_w_new)
-            
-            notes_target, notes_w = relevant_notes(mid, offset, 
-                                                   params.window_size_note_time)
-            continue
-
-        audio_sw = audio_w.resize(onset_gold, duration_gold, 
-                                  params.pitch_input_shape,
-                                  attribs=['mag','ph'])
+        try:
+            if onset_gold >= halfwindow_time:                
+                offset += halfwindow_time
+                
+                audio_w_new = mid_wf.section(offset+halfwindow_time,
+                                             None, halfwindow_frames)
+                #Otherwise the F would be calculated for both
+                audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
+                audio_w.concat_power(audio_w_new)
+                
+                notes_target, notes_w = relevant_notes(mid, offset, 
+                                                       params.window_size_note_time)
+                continue
+    
+            audio_sw = audio_w.resize(onset_gold, duration_gold, 
+                                      params.pitch_input_shape,
+                                      attribs=['mag','ph'])
+        except:
+            logger.info('Faulty note in midi {}. Skipping file'.format(fn))
+            return
 
         sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
@@ -409,11 +414,20 @@ def thread_training(samples_q, params,training_finished,
                 logger.debug('Broken Pipe Detected. Assuming training was '
                              'terminated.')
                 break
-            pitch_x.append(sample.audio)
-            pitch_y.append(sample.pitch)
-            instrument_x.append(sample.audio)
-            instrument_y.append(sample.instrument)
-            i+=1
+            except Exception:
+                logger.exception('Unexpected error while reading from pipe, '
+                                 'attempting to continue')
+                continue
+            try:
+                pitch_x.append(sample.audio)
+                pitch_y.append(sample.pitch)
+                instrument_x.append(sample.audio)
+                instrument_y.append(sample.instrument)
+                i+=1
+            except Exception:
+                logger.exception('Unexpected error while sending samples.'
+                                 'Attempting to continue')
+                continue
             
         if training_finished.value == 0:
             try:
@@ -469,7 +483,7 @@ def train_parallel(params):
     dm.set_set('training') 
     note_index = Value('L',1)
     if params.synth_worker_count == 1:
-        init_sample_aquisition(samples_q,note_index)
+        init_sample_aquisition(samples_q,note_index,training_finished)
         for fn in dm:
             thread_sample_aquisition(fn, params)
     else:
@@ -482,9 +496,9 @@ def train_parallel(params):
                                    ) for fn in dm]
         for result in results:
             result.get()
+        pool.close()
+        pool.join()
     training_finished.value = 1 
-    pool.close()
-    pool.join()
     proc_training.join()
     listener.stop()
     
