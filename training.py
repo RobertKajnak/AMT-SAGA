@@ -14,7 +14,11 @@ from queue import Full as FullException
 import logging
 from functools import wraps
 
-from pynput.keyboard import KeyCode, Key, Listener
+try:
+    from pynput.keyboard import KeyCode, Key, Listener
+    X_AVAILABLE = True
+except:
+    X_AVAILABLE = False
 
 #from onsetdetector import OnsetDetector as OnsetDetector
 #from durationdetector import DurationDetector as DurationDetector
@@ -458,24 +462,27 @@ def train_parallel(params):
                                                           params.parallel_train))
     proc_training.start()
     
-    held_down = set()
-    key_q = KeyCode.from_char('q')
-    key_Q = KeyCode.from_char('Q')
-    def on_press(key):
-        held_down.add(key)
-        if (key==key_q or key==key_Q) \
-                and Key.ctrl in held_down and Key.alt in held_down:
-            training_finished.value=2
-        
-    def on_release(key):
-        try:
-            held_down.remove(key)
-        except KeyError:
-            pass
-    listener = Listener(
-            on_press=on_press,
-            on_release=on_release)
-    listener.start()
+    if X_AVAILABLE:
+        held_down = set()
+        key_q = KeyCode.from_char('q')
+        key_Q = KeyCode.from_char('Q')
+        def on_press(key):
+            held_down.add(key)
+            if (key==key_q or key==key_Q) \
+                    and Key.ctrl in held_down and Key.alt in held_down:
+                training_finished.value=2
+            
+        def on_release(key):
+            try:
+                held_down.remove(key)
+            except KeyError:
+                pass
+        listener = Listener(
+                on_press=on_press,
+                on_release=on_release)
+        listener.start()
+    else:
+        logger.info('X not available. Stopping hotkey not available.')
         
     #Pre-loading sounfont here means that threads don't use the memory separately
     #And other tests have shown that it is thread-safe
@@ -500,7 +507,8 @@ def train_parallel(params):
         pool.join()
     training_finished.value = 1 
     proc_training.join()
-    listener.stop()
+    if X_AVAILABLE:
+        listener.stop()
     
     logger.info('Training finished!')
 #    proc_training.terminate()
