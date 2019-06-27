@@ -93,7 +93,7 @@ def train_sequential(params):
         offset = 0
 
         logger.info('Generating wav for midi {}'.format(fn))
-        mid_wf = audio_complete(mid.render(params.sf_path), params.N - 2)
+        mid_wf = audio_complete(mid.render(params.sf_path), params.N)
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick
         # TODO - Remove drums - hopefully it can learn to ignore it though
         # TODO -  Add random instrument shifts
@@ -125,8 +125,8 @@ def train_sequential(params):
                 audio_w_new = mid_wf.section(offset+halfwindow_time,
                                              None, halfwindow_frames)
                 #Otherwise the F would be calculated for both
-                audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
-                audio_w.concat_power(audio_w_new)
+                audio_w.slice(halfwindow_frames, 2*halfwindow_frames)
+                audio_w.concat(audio_w_new)
                 
                 notes_target, notes_w = relevant_notes(mid, offset, 
                                                        params.window_size_note_time)
@@ -135,9 +135,11 @@ def train_sequential(params):
             audio_sw = audio_w.resize(onset_gold, duration_gold, 
                                       params.pitch_input_shape,
                                       attribs=['mag','ph'])
+            C_sw = audio_w.slice_C(onset_gold, duration_gold, 
+                                      params.pitch_input_shape)
 
-            pitch_s = pitch_classifier.classify(audio_sw, pitch_gold)
-            instrument_sw = instrument_classifier.classify(audio_sw, instrument_gold)
+            pitch_s = pitch_classifier.classify(C_sw, pitch_gold)
+            instrument_sw = instrument_classifier.classify(audio_sw.mag, instrument_gold)
 
             pb.check_progress()
             pitch_s = int(pitch_s)
@@ -149,7 +151,7 @@ def train_sequential(params):
                                   0, duration_gold, velocity=100,
                                   is_drum=False)
             
-            ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N - 2)
+            ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N)
 
             if params.note_save_freq:
                 note_i += 1
@@ -179,7 +181,7 @@ def train_sequential(params):
         fn_result = os.path.join(params.path_output, 'results',
                                  os.path.split(fn[0])[-1])
         sheet.save(fn_result)
-#        audio_complete(sheet.render(sf_path), params.N - 2).save(fn_result + '.flac')
+#        audio_complete(sheet.render(sf_path), params.N).save(fn_result + '.flac')
 
 @logged_thread
 def thread_classification(model_name,params,q_samples, training_finished, 
@@ -282,7 +284,7 @@ def thread_sample_aquisition(filename,params):
     
     logger.info('Generating wav for midi {}'.format(fn))
     try:
-        mid_wf = audio_complete(mid.render(), params.N - 2)
+        mid_wf = audio_complete(mid.render(), params.N)
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
         #Also prevents problems if the first section is complete silence
         
@@ -317,8 +319,8 @@ def thread_sample_aquisition(filename,params):
                 audio_w_new = mid_wf.section(offset+halfwindow_time,
                                              None, halfwindow_frames)
                 #Otherwise the F would be calculated for both
-                audio_w.slice_power(halfwindow_frames, 2*halfwindow_frames)
-                audio_w.concat_power(audio_w_new)
+                audio_w.slice(halfwindow_frames, 2*halfwindow_frames)
+                audio_w.concat(audio_w_new)
                 
                 notes_target, notes_w = relevant_notes(mid, offset, 
                                                        params.window_size_note_time)
@@ -327,11 +329,13 @@ def thread_sample_aquisition(filename,params):
             audio_sw = audio_w.resize(onset_gold, duration_gold, 
                                       params.pitch_input_shape,
                                       attribs=['mag','ph'])
+            C_sw = audio_w.slice_C(onset_gold, duration_gold, 
+                                      params.pitch_input_shape)
         except:
             logger.info('Faulty note in midi {}. Skipping file'.format(fn))
             return
 
-        sample = note_sample(fn, audio_sw, pitch_gold, instrument_gold,
+        sample = note_sample(fn, audio_sw.mag, C_sw , pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
                 
         while training_finished_g.value==0:
@@ -355,7 +359,7 @@ def thread_sample_aquisition(filename,params):
                               0, duration_gold, velocity=100,
                               is_drum=False)
         
-        ac_note_guessed = audio_complete(note_guessed.render(), params.N - 2)
+        ac_note_guessed = audio_complete(note_guessed.render(), params.N)
         
         if params.note_save_freq:
             with note_i_g.get_lock():
@@ -423,9 +427,9 @@ def thread_training(samples_q, params,training_finished,
                                  'attempting to continue')
                 continue
             try:
-                pitch_x.append(sample.audio)
+                pitch_x.append(sample.audio_sw_C)
                 pitch_y.append(sample.pitch)
-                instrument_x.append(sample.audio)
+                instrument_x.append(sample.audio_sf_F)
                 instrument_y.append(sample.instrument)
                 i+=1
             except Exception:

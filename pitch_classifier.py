@@ -12,10 +12,10 @@ from RDCNN import res_net
 
 class pitch_classifier(res_net):
     def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch'):
-        super().__init__(input_shapes=[(params.N / 2, params.pitch_input_shape, 1)],
-                         kernel_sizes=params.kernel_sizes, pool_sizes=params.pool_sizes,
+        super().__init__(input_shapes=[(params.pitch_range, params.pitch_input_shape, 1)],
+                         kernel_sizes=params.kernel_sizes_pitch, pool_sizes=params.pool_sizes_pitch,
                          output_classes=1,
-                         output_range = [9,109],
+                         output_range = [21,108],
                          batch_size = params.batch_size,
 
                          convolutional_layer_count=params.convolutional_layer_count,
@@ -32,21 +32,21 @@ class pitch_classifier(res_net):
 
         self.params = params
         
-    def classify(self, ac, pitch_gold = None):
-        if isinstance(ac,list):
-            ac_shape = ac[0].shape
+    def classify(self, spec, pitch_gold = None):
+        if isinstance(spec,list):
+            spec_shape = spec[0].shape
         else:
-            ac_shape = ac.shape
-        if ac_shape != (self.params.N/2,self.params.pitch_input_shape):
+            spec_shape = spec.shape
+        if spec_shape != (self.params.pitch_range,self.params.pitch_input_shape):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
                              format((int(self.params.N/2),
-                                     self.params.pitch_input_shape),ac_shape))
+                                     self.params.pitch_input_shape),spec_shape))
 
-        if isinstance(ac,list):
-            cb_x=np.zeros([0]+list(ac[0].shape)+[1])
+        if isinstance(spec,list):
+            cb_x=np.zeros([0]+list(spec[0].shape)+[1])
             cb_y=np.zeros([0,1])
-            for acs,label in zip(ac,pitch_gold):
-                expanded_x = acs.mag[np.newaxis,:,:,np.newaxis]
+            for specs,label in zip(spec,pitch_gold):
+                expanded_x = specs[np.newaxis,:,:,np.newaxis]
                 expanded_y = np.expand_dims([label],axis=0)
                 cb_x=np.concatenate((cb_x,expanded_x))
                 cb_y=np.concatenate((cb_y,expanded_y))
@@ -54,7 +54,7 @@ class pitch_classifier(res_net):
             expanded = cb_x
             gold_expanded = cb_y
         else:
-            expanded = ac.mag[np.newaxis,:,:,np.newaxis]
+            expanded = spec[np.newaxis,:,:,np.newaxis]
             gold_expanded = np.expand_dims(pitch_gold,axis=0)
             
         if pitch_gold is None:

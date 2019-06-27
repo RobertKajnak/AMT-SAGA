@@ -27,12 +27,13 @@ class Hyperparams:
         self.window_size_note_time = 6 if window_size_note_time is None else window_size_note_time
         self.pitch_input_shape = 20
         self.timing_input_shape = 258
+        self.pitch_range = 87
         self.batch_size = batch_size = batch_size
 
         self.kernel_sizes = [(32, 3), (32,3)]
         self.pool_sizes = [(5, 2), (5, 2)]
-#        self.kernel_sizes_pitch = [(3, 32), (3, 8)]
-#        self.pool_sizes_pitch = [(2, 5), (2, 5)]
+        self.kernel_sizes_pitch = [(2, 6)]
+        self.pool_sizes_pitch = [(3, 3)]
 
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_frequency = checkpoint_frequency
@@ -62,10 +63,12 @@ def relevant_notes(sequence, offset, duration):
     return notes_target, notes_w
 
 class note_sample:
-    def __init__(self,filename, audio, pitch, instrument,
+    def __init__(self,filename, audio_sw_F, audio_sw_C, 
+                 pitch, instrument,
                  onset_s, duration_s):
         self.filename = filename
-        self.audio = audio
+        self.audio_sw_F = audio_sw_F
+        self.audio_sw_C = audio_sw_C
         self.pitch = pitch
         self.instrument = instrument
         self.onset_s = onset_s
