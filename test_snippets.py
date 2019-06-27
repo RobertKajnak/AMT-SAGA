@@ -30,6 +30,7 @@ import os
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 import pandas
+import logging
 
 #%% Predef functions
 
@@ -554,12 +555,11 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= './data/checkpoints', checkpoint_frequency = 200,
-             checkpoint_prefix = 'checkpoint_' + suffix,
-             verbose = True)
+             checkpoint_prefix = 'checkpoint_' + suffix)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 
-test_set_size = 3000
+test_set_size = 420
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -567,7 +567,7 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
     rn.train([expanded_image],expanded_label)
     pb.check_progress()
     
-test_set_size = 2000
+test_set_size = 400
 pb = PB.ProgressBar(test_set_size)
 for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -595,7 +595,6 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= './data/checkpoints/200', checkpoint_frequency = 200,
              checkpoint_prefix = 'checkpoint_' + suffix,
-             verbose = True,
              weights_load_checkpoint_filename=fn_weights)
 
 test_set_size = 2000
@@ -624,8 +623,7 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= chkp_dir, checkpoint_frequency = 250,
-             checkpoint_prefix = 'checkpoint_' + suffix,
-             verbose = False)
+             checkpoint_prefix = 'checkpoint_' + suffix)
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
 
@@ -645,8 +643,7 @@ rn2 = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= chkp_dir, checkpoint_frequency = 200,
-             checkpoint_prefix = 'checkpoint_' + suffix,
-             verbose = False)
+             checkpoint_prefix = 'checkpoint_' + suffix)
 
 def check(rn1,rn2):
     if rn1.metrics_names!=rn2.metrics_names:
@@ -704,8 +701,7 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              residual_layer_frequencies=residual_layer_frequencies,
              checkpoint_dir= './data/checkpoints/200/', checkpoint_frequency = 200,
              checkpoint_prefix = 'checkpoint_' + suffix,
-             metrics=['sparse_categorical_accuracy'],
-             verbose = True)
+             metrics=['sparse_categorical_accuracy'])
 oname = str(rn.model.optimizer)
 oname = oname[oname.find('optimizers')+11:oname.find('object')-1]
 suffix += '_' + oname
@@ -814,7 +810,7 @@ rn.plot(metrics_to_plot=[1],moving_average_window=100,
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 
 
-#%% RNN cont -- Create Model
+#%% RNN contiuous -- Create Model
 
 path_cont = './data/housing'
 fn_cont = 'housing.data'
@@ -843,14 +839,13 @@ rn = res_net(input_shapes=[(13,1,1)],kernel_sizes=[(1,1)],pool_sizes=[(0,0)],
              pool_layer_frequency=0,
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
-             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 20000,
+             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 200,
              checkpoint_prefix = 'checkpoint_' + suffix,
-             metrics=['mean_squared_error'],
-             verbose = False)
+             metrics=['mean_squared_error'])
 
 rn.plot_model(os.path.join(path_cont,'model_' + suffix + '.png'))
 
-epochs = 10
+epochs = 1
 pb = PB.ProgressBar(training_length*epochs)
 for i in range(epochs):
     np.random.shuffle(training_dataset)
@@ -1029,5 +1024,75 @@ mse = np.mean((y_pred-y_true)**2)
     
 print('MSE = {}'.format(mse))
     
-#%% MNIST with the fit_generator from the RDCNN
+#%% Mel-Spectrogram test
 
+
+
+
+# Create the audio file
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
+buckets = 4096
+
+#Generate notes
+ns = nsequence(sf2_path = sf_path)
+ns.add_note(0,0,'G4',start=0,end=2)
+ns.add_note(0,0,'b',start=0,end=2)
+ns.add_note(0,0,'D5',start=0,end=2)
+ns.add_note(0,0,'C3',start=0.5,end=1.5)
+
+#Generate wave and spectral representations
+wf = ns.render()
+ac = util_audio.audio_complete(wf,buckets)
+
+
+
+#%% Using Librosa 
+sr=44100
+bins_per_note = 1
+ac_short = ac.resize(attribs=['F','mag','ph'],start=0.5,duration=1,target_frame_count=40)
+C = ac.slice_C(start=0.5,duration=1,target_frame_count=40,
+               bins_per_note = bins_per_note,filter_scale=2)
+ac.plot_spec()
+ac_short.plot_spec()
+
+plt.figure(figsize=(10, 5))
+librosa.display.specshow(librosa.amplitude_to_db(np.abs(C), ref=np.max),
+                          sr=ac_short.sr, hop_length=ac_short.hl,
+                          x_axis='time', y_axis='cqt_note')
+plt.colorbar(format='%+2.0f dB')
+plt.title('Constant-Q power spectrum')
+plt.tight_layout()
+
+#plt.figure()
+#nbins = (librosa.note_to_midi('C8') - librosa.note_to_midi('A1'))*bins_per_note
+#Q = librosa.cqt(ac.wf,sr=sr,fmin=librosa.note_to_hz('A1'),n_bins=nbins,
+#                bins_per_octave=12*bins_per_note,
+#            filter_scale=2, sparsity=0.01)
+#print(Q.shape)
+#librosa.display.specshow(librosa.amplitude_to_db(np.abs(Q[:,43:130]), ref=np.max),
+#                          sr=sr, x_axis='time', y_axis='cqt_note')
+#plt.colorbar(format='%+2.0f dB')
+#plt.title('Constant-Q power spectrum')
+#plt.tight_layout()
+
+#%% Using Essentia
+
+from essentia.standard import (NSGConstantQ, ConstantQ,
+    NSGIConstantQ)
+
+# Parameters
+params = {
+          # Backward transform needs to know the signal size.
+          'inputSize': len(wf),
+          'minFrequency': 65.41,
+          'maxFrequency': 6000,
+          'binsPerOctave': 48,
+          # Minimum number of FFT bins per CQ channel.
+          'minimumWindow': 128  
+         }
+
+
+# Forward and backward transforms
+constantq, dcchannel, nfchannel = NSGConstantQ(**params)(wf.astype(np.single))
+constantq2 = ConstantQ()(ac.F[0])
+y = NSGIConstantQ(**params)(constantq, dcchannel, nfchannel)

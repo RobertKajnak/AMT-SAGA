@@ -16,7 +16,7 @@ from util_train_test import Hyperparams,PATH_MODEL_META,PATH_NOTES,\
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AMT-SAGA entry point. '
-                                     'Press ctr+ald+q to stop the training '
+                                     'Press ctr+alt+q to stop the training '
                                      'process and create a save point '
                                      '(even when process is not in focus',
                                      formatter_class=\
