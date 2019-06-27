@@ -225,7 +225,7 @@ class audio_complete:
                 
         mag_sub *= overkill_factor
         
-        offset = self._seconds_to_frames(offset) - attack_compensation
+        offset = max(self._seconds_to_frames(offset) - attack_compensation, 0)
         
         if mag_sub.shape[1]+offset>self.mag.shape[1]:
             mag_sub = mag_sub[:,:(self.mag.shape[1]-offset)]
@@ -241,19 +241,19 @@ class audio_complete:
     def _seconds_to_frames(self,time):
         """Converts a from seconds to frames in fourier. Window is compensated,
             but a value of 0 always returns 0"""
-#        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
-        return max(0,librosa.core.time_to_frames(time,sr=self.sr, 
-                                                 hop_length=self.hl, 
-                                                 n_fft=self.N))
+        return int(np.floor(time * self.shape[1]*self.sr / self.wf.shape[0]))
+#        return max(0,librosa.core.time_to_frames(time,sr=self.sr, 
+#                                                 hop_length=self.hl, 
+#                                                 n_fft=self.N))
     
     def _frames_to_seconds(self,frames):
         """Converts a from fourier frames to seconds. Window is compensated,
             but a value of 0 always returns 0"""
-#        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
-        if frames == 0:
-            return 0
-        return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
-                                           n_fft=self.N)
+        return frames/self.shape[1]/ self.sr * self.wf.shape[0]
+#        if frames == 0:
+#            return 0
+#        return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
+#                                           n_fft=self.N)
     
     def section(self, start, end, duration_in_frames=None):
         """Creates a copy of a section and returns it. The D, F et.c will 
@@ -299,7 +299,7 @@ class audio_complete:
         
         return nac
     
-    def slice_power(self,start_in_frames, end_in_frames):
+    def slice(self,start_in_frames, end_in_frames):
         """Takes a slice from both power and waveform, where available.
         The data is not copied, the class is modified. Section outside are lost.
         """
@@ -316,24 +316,21 @@ class audio_complete:
             self._D = self._D[:,start_in_frames:end_in_frames]
             
 
-    def _concus(self,dest,src):
+    def _concus(self,dest,src,axis=1):
         if src is None or dest is None:
             return None
         else:
-            return np.concatenate((dest,src),axis=1)
+            return np.concatenate((dest,src),axis=axis)
     
-    def concat_power(self,ac):
-        """Concatenates two ac's. Waveform not calculated
+    def concat(self,ac):
+        """Concatenates two ac's and waveforms, where available
         The data is not copied"""
         
-        self._wf = None        
+        self._wf = self._concus(self._wf,ac._wf,axis=0)
         self._F = self._concus(self._F,ac._F)
         self._mag = self._concus(self._mag,ac._mag)
         self._ph = self._concus(self._ph,ac._ph)
         self._D = self._concus(self._D,ac._D)
-
-        if self._F is None and self._mag is None and self._D is None:
-            self._F = self._concus(self.F,ac.F)
 
     def _resize(self,P,target_frame_count):
         """Generic funciton to resize any property"""
@@ -360,7 +357,27 @@ class audio_complete:
             ch = cent + int(np.ceil(target_frame_count/2)) - lim 
             resd = np.concatenate((P[:,:lim],P[:,cl:ch],P[:,-lim:]),axis=1)
         return resd
+    
+    def slice_C(self,start,duration,target_frame_count,
+                magnitude_only = True,
+                bins_per_note = 1,filter_scale=2,
+                highest_note = 'C8', lowest_note='A0'):
+        
+        nbins = (librosa.note_to_midi(highest_note) - 
+                 librosa.note_to_midi(lowest_note))*bins_per_note
+        C = librosa.cqt(self.wf,sr=self.sr,fmin=librosa.note_to_hz(lowest_note),
+                        n_bins=nbins,bins_per_octave=12*bins_per_note,
+                        filter_scale=2,hop_length = self.hl)
+        
+        if magnitude_only:
+            C=np.abs(C)
+        
+        t = self._seconds_to_frames(duration)
+        s = self._seconds_to_frames(start)     
 
+        return self._resize(C[:,s:t],target_frame_count)
+    
+    
     def resize(self,start,duration,target_frame_count, attribs=['F']):
         """ A new ac is returned that has a single data attribute set, 
             specified as a parameter. Hyperparameters copied. ref_mag copied 
