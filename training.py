@@ -429,7 +429,7 @@ def thread_training(samples_q, params,training_finished,
             try:
                 pitch_x.append(sample.audio_sw_C)
                 pitch_y.append(sample.pitch)
-                instrument_x.append(sample.audio_sf_F)
+                instrument_x.append(sample.audio_sw_F)
                 instrument_y.append(sample.instrument)
                 i+=1
             except Exception:
