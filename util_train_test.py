@@ -52,7 +52,8 @@ class Hyperparams:
         self.autoload = autoload
 
 def relevant_notes(sequence, offset, duration):
-    notes_w, notes_target = sequence.get_notes(offset, offset + duration)
+    notes_w, notes_target = sequence.get_notes(offset, offset + duration,
+                                               include_drums = False)
     minus = notes_w.start_first
 
     notes_w = notes_w.clone()

@@ -545,7 +545,7 @@ class note_sequence:
         self.duration = np.max((self.duration,end))
         self.start_first = np.min((self.start_first,start))
 
-    def get_notes(self,start, end):
+    def get_notes(self,start, end, include_drums = True):
         ''' Returns:
                 all notes that have sound inside the specified period
                 all notes that have both start and end points within spec. period
@@ -555,10 +555,12 @@ class note_sequence:
         notes_to_add_inclusive = []
         notes_to_add_exclusive = []
         for note in self.sequence.notes:
-            if (note.start_time>start and note.end_time<end):
+            if (note.start_time>start and note.end_time<end) and \
+            include_drums or note.is_drum == include_drums:
                 notes_to_add_exclusive.append(note)
                 notes_to_add_inclusive.append(note)
-            elif (note.end_time>start and note.start_time<end):
+            elif (note.end_time>start and note.start_time<end) and \
+            include_drums or note.is_drum == include_drums:
                 notes_to_add_inclusive.append(note)
                 
                 
