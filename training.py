@@ -183,12 +183,7 @@ def train_sequential(params):
         sheet.save(fn_result)
 #        audio_complete(sheet.render(sf_path), params.N).save(fn_result + '.flac')
 
-@logged_thread
-def thread_classification(model_name,params,q_samples, training_finished, 
-                          training_lock = None):
-    i_b = 0
-    training_lock and training_lock.acquire()
-    
+def gen_model(model_name,params):
     if model_name == 'pitch':
         logger = logging.getLogger('AMT-SAGA.pitch_class')
         logger.info('Loading Pitch Classifier')
@@ -205,7 +200,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         logger.info('Loading Focused Instrument Classifier')
         prefix = 'checkpoint_intrument_focused'
         model = InstrumentClassifier(params, checkpoint_prefix= prefix)
-    
+        
     if params.autoload:
         fn_check = get_latest_file(params.checkpoint_dir, prefix)
         check_ind = int(fn_check[fn_check.rfind('_')+1:fn_check.rfind('.')])
@@ -219,21 +214,30 @@ def thread_classification(model_name,params,q_samples, training_finished,
                               training=True, test = False, use_csv=False,
                               load_metric_names = False)
             model.current_batch = check_ind
-            i_b = check_ind
+            batch_index = check_ind
             logger.info('{} continuing from batch {}'.
                         format(model_name,check_ind))
         else:
             raise ValueError('Filenames missing of mismatched: {} {}'.
                              format(fn_check,fn_metr))
+    else:
+        batch_index = 0
             
     model.plot_model(os.path.join(params.path_output,
                                   PATH_MODEL_META, model_name+'.png'))
     
-    training_lock and training_lock.release()
 #    onset_detector = OnsetDetector(params)
 #    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
 #    duration_detector = DurationDetector(params)
 #    duration_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'duration'+'.png'))
+    return model, logger, batch_index
+
+@logged_thread
+def thread_classification(model_name,params,q_samples, training_finished, 
+                          training_lock = None):
+    training_lock and training_lock.acquire()    
+    model, logger, i_b = gen_model(model_name, params)
+    training_lock and training_lock.release()
 
     while training_finished.value == 0:
         try:
@@ -249,6 +253,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
         model.classify(sample[0],sample[1]) #!DEBUG
+#        print(sample[0][0].shape,sample[1][0])#DEBUG
         training_lock and training_lock.release()
         
     if training_finished.value == 1:
@@ -390,27 +395,23 @@ def thread_training(samples_q, params,training_finished,
     
     #Technically pipes may be better, but the ease of use outweighs the 
     #performance penalty, especially compared to audio generation and training
-    q_pitch = Queue(1)
-    q_inst = Queue(1)
     if not allow_parallel_training:
         training_lock = Lock()
     else:
         training_lock = None
     
-    proc_pitch = Process(target=thread_classification, 
-                            args=('pitch',params, q_pitch,
+    model_names = ['pitch','instrument']
+    qs = [Queue(1) for _ in model_names]
+    model_processes = [Process(target=thread_classification, 
+                            args=(model_name,params, q,
                                   training_finished,
                                   training_lock))
-    proc_inst = Process(target=thread_classification, 
-                        args=('instrument',params, q_inst,
-                              training_finished,
-                              training_lock))
-    proc_pitch.start()
-    proc_inst.start()
+                        for model_name,q in zip(model_names,qs)]
+    for proc in model_processes:
+        proc.start()
     
     while training_finished.value == 0:
-        pitch_x,pitch_y = [],[]
-        instrument_x,instrument_y = [],[]
+        sample_x,sample_y = [],[]
         i=0
         while training_finished.value == 0 and i<params.batch_size :
             try:
@@ -427,10 +428,8 @@ def thread_training(samples_q, params,training_finished,
                                  'attempting to continue')
                 continue
             try:
-                pitch_x.append(sample.audio_sw_C)
-                pitch_y.append(sample.pitch)
-                instrument_x.append(sample.audio_sw_F)
-                instrument_y.append(sample.instrument)
+                sample_x.append((sample.audio_sw_C,sample.audio_sw_F))
+                sample_y.append((sample.pitch,sample.instrument))
                 i+=1
             except Exception:
                 logger.exception('Unexpected error while sending samples.'
@@ -441,15 +440,17 @@ def thread_training(samples_q, params,training_finished,
             try:
                 logger.debug('Sending Batch {}'.format(b_i))
                 b_i += 1
-                q_pitch.put((pitch_x,pitch_y))
-                q_inst.put((instrument_x,instrument_y))
+                sample_x = list(map(list, zip(*sample_x)))
+                sample_y = list(map(list, zip(*sample_y)))
+                for x,y,q in zip(sample_x,sample_y,qs):
+                    q.put((x,y))
             except BrokenPipeError:
                 logger.debug('Broken Pipe Detected. Assuming training was '
                              'terminated.')
                 break
-        
-    proc_pitch.join()
-    proc_inst.join()
+      
+    for proc in model_processes:
+        proc.join()
 
 # noinspection PyShadowingNames
 def train_parallel(params):
