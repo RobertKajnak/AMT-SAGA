@@ -340,10 +340,10 @@ class audio_complete:
             return np.zeros((P.shape[0],target_frame_count))
         elif t==target_frame_count:
             resd = P
-        elif t<3:
+        elif t<2:
             resd = np.tile(P[:,-1:],target_frame_count)
         elif t<target_frame_count:
-            lim = np.min((4,int(np.round(t/3))))
+            lim = np.min((2,int(np.round(t/3))))
             l_t = int(np.floor((target_frame_count - 2 * lim)/(t-2*lim)))
             tiled = np.tile(P[:,lim:-lim],l_t)
             resd = np.concatenate((P[:,:lim],
@@ -356,6 +356,7 @@ class audio_complete:
             cl = cent - int(np.floor(target_frame_count/2)) + lim
             ch = cent + int(np.ceil(target_frame_count/2)) - lim 
             resd = np.concatenate((P[:,:lim],P[:,cl:ch],P[:,-lim:]),axis=1)
+#            resd = P[:,:target_frame_count]
         return resd
     
     def slice_C(self,start,duration,target_frame_count,
@@ -646,7 +647,22 @@ class note_sequence:
         #modify notes accordingly
         pass
         
-        
+    def change_program_for_instrument(self,instrument,program_target):
+        """ Replaces the program of the instrument with the new one.
+        WARNING: Manual verification is advised, sometimes track metadata may
+        cause different results than expected"""
+        for note in self.sequence.notes:
+            if note.instrument == instrument:
+                note.program = program_target
+                
+    def change_program(self,original,target):
+        """All notes of the specified program will be changed to the new one
+        WARNING: Manual verification is advised, sometimes track metadata may
+        cause different results than expected"""
+        for note in self.sequence.notes:
+            if note.program == original:
+                note.program = target
+    
     def render(self, sf2_path=None, max_duration = None,sample_rate=44100):
         """Generate waveform for the stored sequence
         params:
