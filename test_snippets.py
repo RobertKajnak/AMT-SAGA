@@ -11,7 +11,11 @@ Created on Sat Mar 23 12:05:48 2019
 from util_audio import note_sequence as nsequence
 from util_audio import midi_from_file
 import util_audio
+from util_audio import audio_complete
 from tensorflow.keras.utils import Sequence
+
+from essentia.standard import (NSGConstantQ, ConstantQ,
+    NSGIConstantQ)
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,6 +31,7 @@ import tensorflow.keras as keras
 from RDCNN import res_net
 import ProgressBar as PB
 import os
+from util_dataset import DataManager
 #soundfile.write('stereo_file.flac', data, samplerate, format='flac', subtype='PCM_24')
 
 import pandas
@@ -1075,24 +1080,212 @@ plt.tight_layout()
 #plt.title('Constant-Q power spectrum')
 #plt.tight_layout()
 
-#%% Using Essentia
+#%% Testing compression / Essentia
 
-from essentia.standard import (NSGConstantQ, ConstantQ,
-    NSGIConstantQ)
 
-# Parameters
+sr = 44100
+N=4096
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
+data_path = './data'
+output_path = './output/frequency_compression'
+midi_filename = 'Nyan_cat_web_transcription.mid'
+#midi_filename = 'Runaway.mid'
+
+mid = nsequence(os.path.join(data_path,midi_filename))
+ac = audio_complete(mid.render(sf2_path = sf_path), N)
+
+#ac.save(os.path.join(output_path,'full.flac'))
+
+#%%
+bins_per_note = 1
+filter_scale=2
+highest_note = 'C8'
+lowest_note='A0'
+nbins = (librosa.note_to_midi(highest_note) - 
+                 librosa.note_to_midi(lowest_note))*bins_per_note
+fmin=librosa.note_to_hz(lowest_note)
+fmax=librosa.note_to_hz(highest_note)
+bins_per_octave=12*bins_per_note
+filter_scale=2
+
 params = {
           # Backward transform needs to know the signal size.
-          'inputSize': len(wf),
-          'minFrequency': 65.41,
-          'maxFrequency': 6000,
-          'binsPerOctave': 48,
+          'inputSize': len(ac.wf),
+          'minFrequency': fmin,
+          'maxFrequency': fmax,
+          'binsPerOctave': bins_per_octave,
           # Minimum number of FFT bins per CQ channel.
-          'minimumWindow': 128  
+          'minimumWindow': ac.hl
          }
 
 
 # Forward and backward transforms
-constantq, dcchannel, nfchannel = NSGConstantQ(**params)(wf.astype(np.single))
-constantq2 = ConstantQ()(ac.F[0])
+constantq, dcchannel, nfchannel = NSGConstantQ(**params)(ac.wf.astype(np.single))
+#constantq2 = ConstantQ()(ac.F[0])
 y = NSGIConstantQ(**params)(constantq, dcchannel, nfchannel)
+
+ac2 = audio_complete(y,N)
+ac2.save(os.path.join(output_path,'back.flac'))
+
+def compress(F,ratio=2):
+#    F2 = np.zeros((F.shape[0],F.shape[1]//ratio),dtype=F.dtype)
+    for j in range(F.shape[1]):
+        for i in range(0,F.shape[0]-ratio,ratio):
+#            F[i,j] = np.sum([F[i+k,j] for k in range(ratio)])
+            for k in range(1,ratio):
+                F[i+k,j] = F[i,j]
+#            F[i,j+1] = F[i,j]
+    return F
+constantq_comp = compress(constantq,ratio=2)
+y_comp = NSGIConstantQ(**params)(constantq_comp, dcchannel, nfchannel)
+
+ac3 = audio_complete(y_comp,N)
+ac3.save(os.path.join(output_path,'back_skip_2.flac'))
+
+#%% Short Window Extraction Test
+
+#midi_filename = 'Nyan_cat_web_transcription.mid'
+midi_filename = 'Runaway.mid'
+
+mid = nsequence(os.path.join(data_path,midi_filename))
+ac = audio_complete(mid.render(sf2_path = sf_path), N)
+ac.mag
+
+#for j in [6,8,10,15]:
+#    for i in range(112):
+i=0
+j=20
+mid = nsequence()
+mid.add_note(0,i,67,0,3)
+ac= audio_complete(mid.render(),n_fft=4096)
+ac_sw = ac.resize(mid.sequence.notes[0].start_time, mid.sequence.notes[0].end_time, 
+                          j, attribs=['mag','ph'])
+ac_sw.save(os.path.join(output_path,'sw_'+str(j)+'_'+str(i)+'.flac'))
+
+
+#%% Instrument shift test
+
+output_path = './output/instrument_shift'
+#midi_filename = 'Nyan_cat_web_transcription.mid'
+midi_filename = 'Runaway.mid'
+
+mid = nsequence(os.path.join(data_path,midi_filename))
+
+for note in mid.sequence.notes:
+    if note.instrument == 0:
+        note.program = 0
+        note.instrument = 2
+#        note.end_time+=1
+#        note.velocity = 120
+#    if note.instrument == 1:
+#        note.program = 29
+#mid.add_note(19,0,mid.sequence.notes[0].pitch,
+#             mid.sequence.notes[0].start_time,mid.sequence.notes[0].end_time,
+#             mid.sequence.notes[0].velocity)
+
+#mid.change_program_for_instrument(2,0)
+#mid.add_note(2,0,67,0,2)
+#mid.change_program_for_instrument(0,15)
+#mid.change_program(0,12)
+    
+ac = audio_complete(mid.render(sf2_path = sf_path), N)
+
+ac.save(os.path.join(output_path,'shifted.flac'))
+
+
+#%% Test Instrument distribution over data set
+path_data = os.path.join('data','lakh_midi')
+
+dm = DataManager(path_data, sets=['training'], types=['midi'])
+dm.set_set('training') 
+
+data_dist = np.zeros(112)
+valid_filenames=[]
+train_size = len(dm.data['training']['midi'])
+pb = PB.ProgressBar(train_size)
+
+i=0
+for fn in dm:
+    pb.check_progress()
+    if i>train_size:
+        break
+    else:
+        i+=1
+        
+    try:
+        mid = nsequence(fn[0])
+    except:
+        continue
+#    j=0
+    dist_song = np.zeros(112)
+    for note in mid.sequence.notes:
+#    note = mid.pop()
+#    while note is not None:
+        if not note.is_drum and note.program<112:
+            dist_song[note.program] += 1
+#            j+=1
+#            if j>500:
+#                break;
+#        note = mid.pop()
+        
+    if i<train_size/300 or \
+            np.var(data_dist)>=np.var(data_dist+dist_song):
+        data_dist+=dist_song
+        valid_filenames.append(fn[0])
+        
+dist_total =np.zeros(112)
+for fn in valid_filenames:
+    try:
+        mid = nsequence(fn)
+    except:
+        continue
+    for note in mid.sequence.notes:
+        if not note.is_drum and note.program<112:
+            dist_total[note.program] += 1
+mean_total = np.mean(dist_total)
+
+pb = PB.ProgressBar(len(valid_filenames))
+data_dist = np.zeros(112)
+even_more_valid_fn = []
+for fn in valid_filenames:
+    pb.check_progress()
+    
+    try:
+        mid = nsequence(fn)
+    except:
+        continue
+    dist_song = np.zeros(112)
+    for note in mid.sequence.notes:
+        if not note.is_drum and note.program<112:
+            dist_song[note.program] += 1
+    
+    if (dist_song[0])<np.sum(dist_song)*0.5: #and\
+           #not (np.sum(dist_song[40:43])>np.sum(dist_song)*0.5 and data_dist[40]>mean_total):
+        even_more_valid_fn.append(fn)
+        data_dist+=dist_song
+        
+    if (np.sum(dist_song[40:43])>np.sum(dist_song)*0.5 and data_dist[40]>mean_total):
+        print(data_dist[40],mean_total)
+        print(fn)
+        
+fig = plt.figure(figsize = (7,3),dpi=300)
+plt.bar(range(112),data_dist,color='black')
+plt.ylabel('Occurances')
+plt.xlabel('Program')
+plt.tight_layout()
+#plt.show()
+fig.savefig('output/statistics/data_dristribution_placeholder.png')
+with open('output/statistics/valid_files_from_0_paceholder.txt', 'w') as f:
+    for fn in even_more_valid_fn:
+        f.write("%s\n" % fn)
+        
+#valid_filenames = []
+#with open('output/statistics/valid_files_from_0.txt', 'r') as f:
+#    for fn in f:
+#        valid_filenames.append(fn[:-1])
+#%%
+from shutil import copy2
+for fn in even_more_valid_fn:
+    copy2(fn,'data/lakh_filtered/training/midi/')
+
+
