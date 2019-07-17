@@ -332,18 +332,19 @@ class audio_complete:
         self._ph = self._concus(self._ph,ac._ph)
         self._D = self._concus(self._D,ac._D)
 
-    def _resize(self,P,target_frame_count):
+    @staticmethod
+    def _resize(P,target_frame_count):
         """Generic funciton to resize any property"""
         t = P.shape[1]
-        
         if t==0:
             return np.zeros((P.shape[0],target_frame_count))
         elif t==target_frame_count:
             resd = P
-        elif t<2:
-            resd = np.tile(P[:,-1:],target_frame_count)
+        elif t<3:
+            resd = np.concatenate((P[:,:1],np.tile(P[:,-1:],target_frame_count-1)),axis=1)
         elif t<target_frame_count:
-            lim = np.min((2,int(np.round(t/3))))
+            lim = np.min((1,int(np.round(t/3))))
+            print(t,lim,int(np.round(t/3)))
             l_t = int(np.floor((target_frame_count - 2 * lim)/(t-2*lim)))
             tiled = np.tile(P[:,lim:-lim],l_t)
             resd = np.concatenate((P[:,:lim],
@@ -351,12 +352,12 @@ class audio_complete:
                                    P[:,-(target_frame_count-tiled.shape[1]-lim):]),
                                    axis=1)
         else:
-            lim = np.int(np.min([4,target_frame_count/3]))
-            cent = int(np.floor(P.shape[1]/2))
-            cl = cent - int(np.floor(target_frame_count/2)) + lim
-            ch = cent + int(np.ceil(target_frame_count/2)) - lim 
-            resd = np.concatenate((P[:,:lim],P[:,cl:ch],P[:,-lim:]),axis=1)
-#            resd = P[:,:target_frame_count]
+#            lim = np.int(np.min([4,target_frame_count/3]))
+#            cent = int(np.floor(P.shape[1]/2))
+#            cl = cent - int(np.floor(target_frame_count/2)) + lim
+#            ch = cent + int(np.ceil(target_frame_count/2)) - lim 
+#            resd = np.concatenate((P[:,:lim],P[:,cl:ch],P[:,-lim:]),axis=1)
+            resd = P[:,:target_frame_count]
         return resd
     
     def slice_C(self,start,duration,target_frame_count,
