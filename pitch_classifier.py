@@ -12,10 +12,10 @@ from RDCNN import res_net
 
 class pitch_classifier(res_net):
     def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch'):
-        super().__init__(input_shapes=[(params.pitch_range, params.pitch_input_shape, 1)],
-                         kernel_sizes=params.kernel_sizes_pitch, pool_sizes=params.pool_sizes_pitch,
+        super().__init__(input_shapes=[(params.pitch_bands, params.pitch_frames, 1)],
+                         kernel_sizes=params.kernel_size_pitch, pool_sizes=params.pool_size_pitch,
                          output_classes=1,
-                         output_range = [21,108],
+                         output_range = [params.pitch_low,params.pitch_high],
                          batch_size = params.batch_size,
 
                          convolutional_layer_count=params.convolutional_layer_count,
@@ -37,10 +37,10 @@ class pitch_classifier(res_net):
             spec_shape = spec[0].shape
         else:
             spec_shape = spec.shape
-        if spec_shape != (self.params.pitch_range,self.params.pitch_input_shape):
+        if spec_shape != (self.params.pitch_bands,self.params.pitch_frames):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
-                             format((int(self.params.N/2),
-                                     self.params.pitch_input_shape),spec_shape))
+                             format((self.params.pitch_bands,
+                                     self.params.frames),spec_shape))
 
         if isinstance(spec,list):
             cb_x=np.zeros([0]+list(spec[0].shape)+[1])

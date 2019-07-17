@@ -18,7 +18,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AMT-SAGA entry point. '
                                      'Press ctr+alt+q to stop the training '
                                      'process and create a save point '
-                                     '(even when process is not in focus',
+                                     '(even when process is not in focus) ',
                                      formatter_class=\
                                      argparse.ArgumentDefaultsHelpFormatter)
     #Path and crucial files
@@ -60,8 +60,8 @@ if __name__ == '__main__':
     parser.add_argument('-partrain',
                         action = 'store_true',
                         help = 'Specifying to allow traing models in parallel.'
-                        ' This can cause instability or slowerperformance than'
-                        ' the sequential approach')
+                        ' This can cause instability or slower performance '
+                        'than the sequential approach')
     
     #Checkpoint & debug
     parser.add_argument('-auto_continue',
@@ -79,7 +79,7 @@ if __name__ == '__main__':
                         default = 500,
                         type = int,
                         help = 'The frequency at which the currently generated'
-                        'and subtracted notes will be displayed. This can be '
+                        ' and subtracted notes will be displayed. This can be '
                         'useful to see if no synthetizer error has occured')
     #Logging/Messages
     parser.add_argument('-log_file_name',

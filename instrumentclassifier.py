@@ -11,10 +11,30 @@ from RDCNN import res_net
 
 
 class InstrumentClassifier(res_net):
-    def __init__(self, params,checkpoint_prefix = 'checkpoint_instrument'):
-        super().__init__(input_shapes=[(params.N / 2+1, params.pitch_input_shape, 1)],
-                         kernel_sizes=params.kernel_sizes, pool_sizes=params.pool_sizes,
-                         output_classes=127,
+    INSTRUMENT = 'instrument'
+    INSTRUMENT_FOCUSED = 'instrument_focused'
+    INSTRUMENT_DUAL = 'instrument_dual'
+    def __init__(self, params, variant):
+        if variant == InstrumentClassifier.INSTRUMENT:
+            input_shape = [(params.instrument_bands, params.instrument_frames, 1)]
+            kernel_size = params.kernel_size_instrument
+            pool_size = params.pool_size_instrument
+        elif variant == InstrumentClassifier.INSTRUMENT_FOCUSED:
+            input_shape = [(params.instrument_bands, params.instrument_frames, 1)]
+            kernel_size = params.kernel_size_instrument
+            pool_size = params.pool_size_instrument
+        elif variant == InstrumentClassifier.INSTRUMENT_DUAL:
+            input_shape = [(params.instrument_bands, params.instrument_frames, 1),
+                           (params.instrument_bands, params.instrument_frames, 1)]
+            kernel_size = params.kernel_sizeinstrument
+            pool_size = params.pool_size_instrument
+        else:
+            raise ValueError('Invalid Variant Selected')
+        
+        checkpoint_prefix = 'checkpoint_' + variant
+        super().__init__(input_shapes=input_shape,
+                         kernel_sizes=kernel_size, pool_sizes=pool_size,
+                         output_classes=params.instrument_classes,
                          batch_size = params.batch_size,
 
                          convolutional_layer_count=params.convolutional_layer_count,
@@ -34,10 +54,10 @@ class InstrumentClassifier(res_net):
             spec_shape = spec[0].shape
         else:
             spec_shape = spec.shape
-        if spec_shape != (self.params.N/2+1,self.params.pitch_input_shape):
+        if spec_shape != (self.params.instrument_bands,self.params.instrument_frames):
             raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
-                             format((int(self.params.N/2),
-                                     self.params.pitch_input_shape),spec_shape))
+                             format((self.params.instrument_bands,
+                                     self.params.instrument_frames),spec_shape))
 
         if isinstance(spec,list):
             cb_x=np.zeros([0]+list(spec[0].shape)+[1])

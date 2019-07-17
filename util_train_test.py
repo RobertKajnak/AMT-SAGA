@@ -25,15 +25,28 @@ class Hyperparams:
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
         self.window_size_note_time = 6 if window_size_note_time is None else window_size_note_time
-        self.pitch_input_shape = 20
-        self.timing_input_shape = 258
-        self.pitch_range = 87
+        
+        self.timing_frames = 258
+        self.timing_bands = 42
+#        self.kernel_size_timing = [(32, 3), (32,3)]
+#        self.pool_size_timing = [(5, 2), (5, 2)]
+        
+        self.pitch_frames = 8
+        self.pitch_bands = 87
+        self.pitch_low = 21
+        self.pitch_high = 108
+        self.kernel_size_pitch = [(6, 2)]
+        self.pool_size_pitch = [(6, 2)]
+        
+        self.instrument_frames = self.pitch_frames
+        self.instrument_bins_per_tone = 4
+        self.instrument_bands = self.instrument_bins_per_tone*self.pitch_bands
+        self.instrument_classes = 112
+        self.kernel_size_instrument = [(4, 2)]
+        self.pool_size_instrument = [(12, 2)]
+        
         self.batch_size = batch_size = batch_size
 
-        self.kernel_sizes = [(32, 3), (32,3)]
-        self.pool_sizes = [(5, 2), (5, 2)]
-        self.kernel_sizes_pitch = [(2, 6)]
-        self.pool_sizes_pitch = [(3, 3)]
 
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_frequency = checkpoint_frequency
@@ -64,12 +77,13 @@ def relevant_notes(sequence, offset, duration):
     return notes_target, notes_w
 
 class note_sample:
-    def __init__(self,filename, audio_sw_F, audio_sw_C, 
+    def __init__(self,filename, audio_sw_F, audio_sw_C_pitch, audio_sw_C_inst,
                  pitch, instrument,
                  onset_s, duration_s):
         self.filename = filename
-        self.audio_sw_F = audio_sw_F
-        self.audio_sw_C = audio_sw_C
+#        self.audio_sw_F = audio_sw_F
+        self.audio_sw_C_pitch = audio_sw_C_pitch
+        self.audio_sw_C_inst = audio_sw_C_inst
         self.pitch = pitch
         self.instrument = instrument
         self.onset_s = onset_s

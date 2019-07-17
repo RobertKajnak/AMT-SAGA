@@ -79,7 +79,7 @@ def train_sequential(params):
                                                   ,PATH_MODEL_META,
                                                   'instrument'+'.png'))
     frametime = params.H / params.sr
-    halfwindow_frames = int(params.timing_input_shape/2)
+    halfwindow_frames = int(params.timing_frames/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
     pb = PB.ProgressBar(300000)
@@ -96,13 +96,14 @@ def train_sequential(params):
         mid_wf = audio_complete(mid.render(params.sf_path), params.N)
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick
         # TODO - Remove drums - hopefully it can learn to ignore it though
-        # TODO -  Add random instrument shifts
             
-        audio_w = mid_wf.section(offset, None, params.timing_input_shape)
-        notes_target, notes_w = relevant_notes(mid, offset, 
+        audio_w = mid_wf.section(offset, None, params.timing_frames)
+        notes_target, _ = relevant_notes(mid, offset, 
                                                params.window_size_note_time)
         while offset < mid.duration:
             note_gold = notes_target.pop(lowest=True, threshold=frametime)
+            if note_gold.program>111:
+                continue#TODO: test this
             # training
             if note_gold is not None:
                 logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
@@ -128,15 +129,15 @@ def train_sequential(params):
                 audio_w.slice(halfwindow_frames, 2*halfwindow_frames)
                 audio_w.concat(audio_w_new)
                 
-                notes_target, notes_w = relevant_notes(mid, offset, 
+                notes_target, _ = relevant_notes(mid, offset, 
                                                        params.window_size_note_time)
                 continue
 
             audio_sw = audio_w.resize(onset_gold, duration_gold, 
-                                      params.pitch_input_shape,
+                                      params.pitch_frames,
                                       attribs=['mag','ph'])
             C_sw = audio_w.slice_C(onset_gold, duration_gold, 
-                                      params.pitch_input_shape)
+                                      params.pitch_frames)
 
             pitch_s = pitch_classifier.classify(C_sw, pitch_gold)
             instrument_sw = instrument_classifier.classify(audio_sw.mag, instrument_gold)
@@ -192,14 +193,18 @@ def gen_model(model_name,params):
     if model_name == 'instrument':
         logger = logging.getLogger('AMT-SAGA.instrument_class')
         logger.info('Loading Instrument Classifier')
-        prefix = 'checkpoint_intrument'
-        model = InstrumentClassifier(params, checkpoint_prefix= prefix)
-        
+        model = InstrumentClassifier(params, 
+                                     variant=InstrumentClassifier.INSTRUMENT)
     if model_name == 'instrument_focused':
         logger = logging.getLogger('AMT-SAGA.instrument_focused_class')
         logger.info('Loading Focused Instrument Classifier')
-        prefix = 'checkpoint_intrument_focused'
-        model = InstrumentClassifier(params, checkpoint_prefix= prefix)
+        model = InstrumentClassifier(
+                params, variant= InstrumentClassifier.INSTRUMENT_FOCUESD)
+    if model_name == 'instrument_dual':
+        logger = logging.getLogger('AMT-SAGA.instrument_dual_class')
+        logger.info('Loading Focused Instrument Classifier')
+        model = InstrumentClassifier(
+                params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
         
     if params.autoload:
         fn_check = get_latest_file(params.checkpoint_dir, prefix)
@@ -282,7 +287,8 @@ def thread_sample_aquisition(filename,params):
     logger = logging.getLogger('AMT-SAGA.sample_gen')
 
     frametime = params.H / params.sr
-    halfwindow_frames = int(params.timing_input_shape/2)
+    print(frametime)
+    halfwindow_frames = int(params.timing_frames/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
     offset = 0
@@ -293,23 +299,24 @@ def thread_sample_aquisition(filename,params):
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
         #Also prevents problems if the first section is complete silence
         
-        # TODO -  Add random instrument shifts
-                
-        audio_w = mid_wf.section(offset, None, params.timing_input_shape)
-        notes_target, notes_w = relevant_notes(mid, offset, 
+        audio_w = mid_wf.section(offset, None, params.timing_frames)
+        notes_target, _ = relevant_notes(mid, offset, 
                                                params.window_size_note_time)
     except Exception as ex:
         logger.detailed('Could not process file {} with error {}. Skipping...'.
               format(fn,ex))
         return
-        
+    #TODO only process an n notes long sectionf rom the song
     while offset < mid.duration and training_finished_g.value==0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
+        if note_gold.program>111 or note_gold.is_drum \
+        or note_gold.pitch<params.pitch_low or note_gold.pitch>params.pitch_high:
+            continue#TODO: test this
         # training
         if note_gold is not None:
             logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
                   format(offset, note_gold.start_time,note_gold.end_time))
-            
+        
             onset_gold = note_gold.start_time
             duration_gold = note_gold.end_time - note_gold.start_time
             pitch_gold = note_gold.pitch
@@ -320,27 +327,31 @@ def thread_sample_aquisition(filename,params):
         try:
             if onset_gold >= halfwindow_time:                
                 offset += halfwindow_time
-                
                 audio_w_new = mid_wf.section(offset+halfwindow_time,
                                              None, halfwindow_frames)
                 #Otherwise the F would be calculated for both
                 audio_w.slice(halfwindow_frames, 2*halfwindow_frames)
                 audio_w.concat(audio_w_new)
                 
-                notes_target, notes_w = relevant_notes(mid, offset, 
+                notes_target, _ = relevant_notes(mid, offset, 
                                                        params.window_size_note_time)
+                #TODO:check if this should be halfwindow to make the window not include the first note after the offset
                 continue
     
-            audio_sw = audio_w.resize(onset_gold, duration_gold, 
-                                      params.pitch_input_shape,
-                                      attribs=['mag','ph'])
-            C_sw = audio_w.slice_C(onset_gold, duration_gold, 
-                                      params.pitch_input_shape)
+#            audio_sw = audio_w.resize(onset_gold, duration_gold, 
+#                                      params.pitch_frames,
+#                                      attribs=['mag','ph'])
+            C_sw_pitch = audio_w.slice_C(onset_gold, duration_gold, 
+                                      params.pitch_frames,
+                                      bins_per_note=1)
+            C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
+                                        params.instrument_frames,
+                                        bins_per_note=params.instrument_bins_per_tone)
         except:
             logger.info('Faulty note in midi {}. Skipping file'.format(fn))
             return
 
-        sample = note_sample(fn, audio_sw.mag, C_sw , pitch_gold, instrument_gold,
+        sample = note_sample(fn, None, C_sw_pitch, C_sw_inst, pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
                 
         while training_finished_g.value==0:
@@ -400,7 +411,7 @@ def thread_training(samples_q, params,training_finished,
     else:
         training_lock = None
     
-    model_names = ['pitch','instrument']
+    model_names = ['pitch','instrument']#, 'instrument_focused', 'instrument_dual']
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
@@ -428,7 +439,7 @@ def thread_training(samples_q, params,training_finished,
                                  'attempting to continue')
                 continue
             try:
-                sample_x.append((sample.audio_sw_C,sample.audio_sw_F))
+                sample_x.append((sample.audio_sw_C_pitch,sample.audio_sw_C_inst))
                 sample_y.append((sample.pitch,sample.instrument))
                 i+=1
             except Exception:
@@ -451,7 +462,27 @@ def thread_training(samples_q, params,training_finished,
       
     for proc in model_processes:
         proc.join()
-
+        
+def attach_keyboard_abort(training_finished):
+    held_down = set()
+    key_q = KeyCode.from_char('q')
+    key_Q = KeyCode.from_char('Q')
+    def on_press(key):
+        held_down.add(key)
+        if (key==key_q or key==key_Q) \
+                and Key.ctrl in held_down and Key.alt in held_down:
+            training_finished.value=2
+        
+    def on_release(key):
+        try:
+            held_down.remove(key)
+        except KeyError:
+            pass
+    listener = Listener(
+            on_press=on_press,
+            on_release=on_release)
+    listener.start()
+    
 # noinspection PyShadowingNames
 def train_parallel(params):
     """ Prepare data, training and test"""
@@ -468,24 +499,7 @@ def train_parallel(params):
     proc_training.start()
     
     if X_AVAILABLE:
-        held_down = set()
-        key_q = KeyCode.from_char('q')
-        key_Q = KeyCode.from_char('Q')
-        def on_press(key):
-            held_down.add(key)
-            if (key==key_q or key==key_Q) \
-                    and Key.ctrl in held_down and Key.alt in held_down:
-                training_finished.value=2
-            
-        def on_release(key):
-            try:
-                held_down.remove(key)
-            except KeyError:
-                pass
-        listener = Listener(
-                on_press=on_press,
-                on_release=on_release)
-        listener.start()
+        listener = attach_keyboard_abort(training_finished)
     else:
         logger.info('X not available. Stopping hotkey not available.')
         
