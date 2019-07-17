@@ -37,11 +37,6 @@ if __name__ == '__main__':
                         'graphs, metrics etc.')
     
     #Model parallelization
-    parser.add_argument('-sequential',
-                        action = 'store_true',
-                        help = 'Specifying this will force the algorithm to '
-                        'not use any multithreading or multiprocessing '
-                        'methods. Batch size will be set to 1.')
     parser.add_argument('-batch_size',
                         default=8,
                         type=int,
@@ -108,7 +103,6 @@ if __name__ == '__main__':
     path_data = args['data_path']
     path_output = args['output_path']
     path_sf = args['soundfont_path']
-    sequential = args['sequential']
     synth_workers = args['synth_workers']
     par_train = args['partrain']
     batch_size = args['batch_size']
@@ -199,15 +193,9 @@ if __name__ == '__main__':
                         autoload = autoload)
         args_str = '\n' + '\n'.join('{} = {}'.format(k, v) for k, v in args.items())
         logger.info('All hyperparemeters set, starting training: {}'.format(args_str))
-        if sequential:
-            from training import train_sequential
-            p.batch_size = 1
-            p.parallel_train= False
-            p.synth_worker_count= 1
-            train_sequential(p)
-        else:
-            from training import train_parallel
-            train_parallel(p)
+
+        from training import train_parallel
+        train_parallel(p)
         logger.info('Main Thread Terminated Gracefully')
     except Exception:
         logger.exception('Exception occured in thread handler')
