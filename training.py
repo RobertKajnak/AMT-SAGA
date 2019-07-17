@@ -29,8 +29,6 @@ from util_audio import note_sequence
 from util_audio import audio_complete
 from util_train_test import relevant_notes,note_sample, PATH_MODEL_META,PATH_NOTES
 
-import ProgressBar as PB
-
 try:
     logging.DETAILED
 except:
@@ -54,135 +52,6 @@ def logged_thread(func):
             return None
         
     return wrapper
-
-#@logged_thread
-#def train_sequential(params):
-#    """ DEPRECATED
-#    Prepare data, training and test"""
-#    logger = logging.getLogger('AMT-SAGA.train_seq')
-#
-#    dm = DataManager(params.path_data, sets=['training', 'test'], types=['midi'])
-#    
-##    onset_detector = OnsetDetector(params)
-##    onset_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'onset'+'.png'))
-##    duration_detector = DurationDetector(params)
-##    duration_detector.plot_model(os.path.join(path_output,PATH_MODEL_META,'duration'+'.png'))
-#
-#    logger.info('Loading Pitch Classifier')
-#    pitch_classifier = PitchClassifier(params)
-#    pitch_classifier.plot_model(os.path.join(params.path_output,
-#                                             PATH_MODEL_META,'pitch'+'.png'))
-#
-#    logger.info('Loading Instrument Classifier')
-#    instrument_classifier = InstrumentClassifier(params)
-#    instrument_classifier.plot_model(os.path.join(params.path_output
-#                                                  ,PATH_MODEL_META,
-#                                                  'instrument'+'.png'))
-#    frametime = params.H / params.sr
-#    halfwindow_frames = int(params.timing_frames/2)
-#    halfwindow_time = int(params.window_size_note_time/2)
-#
-#    pb = PB.ProgressBar(300000)
-#    print('')
-#    dm.set_set('training')
-#    for fn in dm:
-#        mid = note_sequence(fn[0])
-#        sheet = note_sequence()
-#        
-#        note_i = 0
-#        offset = 0
-#
-#        logger.info('Generating wav for midi {}'.format(fn))
-#        mid_wf = audio_complete(mid.render(params.sf_path), params.N)
-#        mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick
-#        # TODO - Remove drums - hopefully it can learn to ignore it though
-#            
-#        audio_w = mid_wf.section(offset, None, params.timing_frames)
-#        notes_target, _ = relevant_notes(mid, offset, 
-#                                               params.window_size_note_time)
-#        while offset < mid.duration:
-#            note_gold = notes_target.pop(lowest=True, threshold=frametime)
-#            if note_gold.program>111:
-#                continue#TODO: test this
-#            # training
-#            if note_gold is not None:
-#                logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
-#                      format(offset, note_gold.start_time,note_gold.end_time))
-#                
-#                onset_gold = note_gold.start_time
-#                duration_gold = note_gold.end_time - note_gold.start_time
-#                pitch_gold = note_gold.pitch
-#                instrument_gold = note_gold.program
-#            else:
-#                onset_gold = offset + halfwindow_time
-#            
-##            onset_s = onset_detector.detect(audio_w, onset_gold)
-##            duration_s = duration_detector.detect(audio_w, duration_gold)
-#
-#            # use correct value to move window
-#            if onset_gold >= halfwindow_time:                
-#                offset += halfwindow_time
-#                
-#                audio_w_new = mid_wf.section(offset+halfwindow_time,
-#                                             None, halfwindow_frames)
-#                #Otherwise the F would be calculated for both
-#                audio_w.slice(halfwindow_frames, 2*halfwindow_frames)
-#                audio_w.concat(audio_w_new)
-#                
-#                notes_target, _ = relevant_notes(mid, offset, 
-#                                                       params.window_size_note_time)
-#                continue
-#
-#            audio_sw = audio_w.resize(onset_gold, duration_gold, 
-#                                      params.pitch_frames,
-#                                      attribs=['mag','ph'])
-#            C_sw = audio_w.slice_C(onset_gold, duration_gold, 
-#                                      params.pitch_frames)
-#
-#            pitch_s = pitch_classifier.classify(C_sw, pitch_gold)
-#            instrument_sw = instrument_classifier.classify(audio_sw.mag, instrument_gold)
-#
-#            pb.check_progress()
-#            pitch_s = int(pitch_s)
-#            instrument_sw = int(instrument_sw)
-#
-#            # subtract correct note for training:
-#            note_guessed = note_sequence()
-#            note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold,
-#                                  0, duration_gold, velocity=100,
-#                                  is_drum=False)
-#            
-#            ac_note_guessed = audio_complete(note_guessed.render(params.sf_path), params.N)
-#
-#            if params.note_save_freq:
-#                note_i += 1
-#                if note_i % params.note_save_freq == 0:
-#                    fn_base = os.path.join(params.path_output, PATH_NOTES, 
-#                                           os.path.split(fn[0])[-1][:-4] + 
-#                                           str(note_i))
-#                    logger.detailed('Saving sample {} to {}'.format(note_i,fn_base))
-#                    
-#                    audio_w.save(fn_base+'_full_window.flac')
-##                    audio_sw.save(fn_base+'_short_window.flac')
-#                    note_guessed.save(fn_base + '_guessed.mid')
-#                    ac_note_guessed.save(fn_base+'_guessed.flac')
-#                    
-#            audio_w.subtract(ac_note_guessed, offset=onset_gold)
-#    
-#            if (params.note_save_freq!=0) and \
-#                (note_i % params.note_save_freq == 0):
-#                audio_w.save(fn_base + '_after_subtr.flac')
-#
-#            onset_s = onset_gold
-#            duration_s = duration_gold
-##            instrument_sw = instrument_gold
-##            pitch_s = pitch_gold
-#            sheet.add_note(instrument_sw, instrument_sw, pitch_s, onset_s + offset, onset_s + offset + duration_s)
-#
-#        fn_result = os.path.join(params.path_output, 'results',
-#                                 os.path.split(fn[0])[-1])
-#        sheet.save(fn_result)
-##        audio_complete(sheet.render(sf_path), params.N).save(fn_result + '.flac')
 
 def gen_model(model_name,params):
     if model_name == 'pitch':
@@ -257,7 +126,10 @@ def thread_classification(model_name,params,q_samples, training_finished,
         
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
-        model.classify(sample[0],sample[1]) #!DEBUG
+        try:
+            model.classify(sample[0],sample[1]) #!DEBUG
+        except:#TODO: Try
+            logger.exception('An Error occured while processing the sample. Skipping')
 #        print(sample[0][0].shape,sample[1][0])#DEBUG
         training_lock and training_lock.release()
         
@@ -282,9 +154,13 @@ def init_sample_aquisition(samples_q,note_i,training_finished):
     
 @logged_thread
 def thread_sample_aquisition(filename,params):
-    fn = filename
-    mid = note_sequence(fn[0])
     logger = logging.getLogger('AMT-SAGA.sample_gen')
+    fn = filename
+    try:
+        mid = note_sequence(fn[0])
+    except:
+        logger.info('File {} Corrupt. Skipping'.format(fn))
+        return
 
     frametime = params.H / params.sr
     print(frametime)
@@ -309,9 +185,15 @@ def thread_sample_aquisition(filename,params):
     #TODO only process an n notes long sectionf rom the song
     while offset < mid.duration and training_finished_g.value==0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
-        if note_gold.program>111 or note_gold.is_drum \
-        or note_gold.pitch<params.pitch_low or note_gold.pitch>params.pitch_high:
-            continue#TODO: test this
+        if note_gold is not None: 
+            if note_gold.program>=params.instrument_classes:
+                logger.debug('Program out of range: {}'.format(note_gold.program))
+                continue
+            elif note_gold.pitch<params.pitch_low or note_gold.pitch>params.pitch_high:
+                logger.debug('Pitch out of range: {}'.note_gold.pitch)
+                continue
+            elif note_gold.is_drum:
+                continue#TODO: test this
         # training
         if note_gold is not None:
             logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
@@ -482,6 +364,7 @@ def attach_keyboard_abort(training_finished):
             on_press=on_press,
             on_release=on_release)
     listener.start()
+    return listener
     
 # noinspection PyShadowingNames
 def train_parallel(params):
