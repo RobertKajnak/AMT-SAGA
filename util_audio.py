@@ -344,7 +344,6 @@ class audio_complete:
             resd = np.concatenate((P[:,:1],np.tile(P[:,-1:],target_frame_count-1)),axis=1)
         elif t<target_frame_count:
             lim = np.min((1,int(np.round(t/3))))
-            print(t,lim,int(np.round(t/3)))
             l_t = int(np.floor((target_frame_count - 2 * lim)/(t-2*lim)))
             tiled = np.tile(P[:,lim:-lim],l_t)
             resd = np.concatenate((P[:,:lim],
@@ -558,11 +557,11 @@ class note_sequence:
         notes_to_add_exclusive = []
         for note in self.sequence.notes:
             if (note.start_time>start and note.end_time<end) and \
-            include_drums or note.is_drum == include_drums:
+            (include_drums or note.is_drum == include_drums):
                 notes_to_add_exclusive.append(note)
                 notes_to_add_inclusive.append(note)
             elif (note.end_time>start and note.start_time<end) and \
-            include_drums or note.is_drum == include_drums:
+            (include_drums or note.is_drum == include_drums):
                 notes_to_add_inclusive.append(note)
                 
                 
@@ -585,7 +584,7 @@ class note_sequence:
         """Returns and removes the first element from the note sequence
         The order is determined by the parameters
         args:
-            lowst: if True the secondary sorting criteria is pitch, lowest being first
+            lowest: if True the secondary sorting criteria is pitch, lowest being first
         """
         if len(self.sequence.notes) == 1:
             first = self.sequence.notes[0]
