@@ -68,7 +68,7 @@ def gen_model(model_name,params):
         logger = logging.getLogger('AMT-SAGA.instrument_focused_class')
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
-                params, variant= InstrumentClassifier.INSTRUMENT_FOCUESD)
+                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED)
     if model_name == 'instrument_dual':
         logger = logging.getLogger('AMT-SAGA.instrument_dual_class')
         logger.info('Loading Focused Instrument Classifier')
@@ -163,7 +163,6 @@ def thread_sample_aquisition(filename,params):
         return
 
     frametime = params.H / params.sr
-    print(frametime)
     halfwindow_frames = int(params.timing_frames/2)
     halfwindow_time = int(params.window_size_note_time/2)
 
@@ -220,20 +219,25 @@ def thread_sample_aquisition(filename,params):
                 #TODO:check if this should be halfwindow to make the window not include the first note after the offset
                 continue
     
-#            audio_sw = audio_w.resize(onset_gold, duration_gold, 
-#                                      params.pitch_frames,
-#                                      attribs=['mag','ph'])
+            audio_sw = audio_w.resize(onset_gold, duration_gold, 
+                                      params.pitch_frames,
+                                      attribs=['mag'])
             C_sw_pitch = audio_w.slice_C(onset_gold, duration_gold, 
                                       params.pitch_frames,
                                       bins_per_note=1)
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
                                         bins_per_note=params.instrument_bins_per_tone)
+            fft_bin_min = audio_w.midi_tone_to_FFT(note_gold.pitch)
+            fft_bin_max = fft_bin_min + params.instrument_bands
+            C_sw_inst_foc = audio_sw.section_power('mag',
+                                                  fft_bin_min,fft_bin_max)#TODO this only works for train and test
         except:
             logger.info('Faulty note in midi {}. Skipping file'.format(fn))
             return
 
-        sample = note_sample(fn, None, C_sw_pitch, C_sw_inst, pitch_gold, instrument_gold,
+        sample = note_sample(fn, None, C_sw_pitch, C_sw_inst, C_sw_inst_foc, 
+                             pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
                 
         while training_finished_g.value==0:
@@ -293,7 +297,7 @@ def thread_training(samples_q, params,training_finished,
     else:
         training_lock = None
     
-    model_names = ['pitch','instrument']#, 'instrument_focused', 'instrument_dual']
+    model_names = ['pitch','instrument', 'instrument_focused', 'instrument_dual']
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
@@ -321,8 +325,12 @@ def thread_training(samples_q, params,training_finished,
                                  'attempting to continue')
                 continue
             try:
-                sample_x.append((sample.audio_sw_C_pitch,sample.audio_sw_C_inst))
-                sample_y.append((sample.pitch,sample.instrument))
+                sample_x.append((sample.sw_C_pitch,
+                                 sample.sw_C_inst,sample.sw_C_inst_foc,
+                                 [sample.sw_C_inst,sample.sw_C_inst_foc]))
+                sample_y.append((sample.pitch,
+                                 sample.instrument,
+                                 sample.instrument,sample.instrument))
                 i+=1
             except Exception:
                 logger.exception('Unexpected error while sending samples.'

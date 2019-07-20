@@ -15,6 +15,7 @@ PATH_CHECKPOINTS = 'checkpoints'
 class Hyperparams:
     def __init__(self, path_data, sf_path, path_output='.', 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
+                 bins_per_tone = 4,
                  batch_size = 8, synth_worker_count =1,
                  parallel_train=False,
                  checkpoint_dir ='./data/checkpoints',
@@ -39,7 +40,7 @@ class Hyperparams:
         self.pool_size_pitch = [(6, 2)]
         
         self.instrument_frames = self.pitch_frames
-        self.instrument_bins_per_tone = 4
+        self.instrument_bins_per_tone = bins_per_tone
         self.instrument_bands = self.instrument_bins_per_tone*self.pitch_bands
         self.instrument_classes = 112
         self.kernel_size_instrument = [(4, 2)]
@@ -77,13 +78,16 @@ def relevant_notes(sequence, offset, duration):
     return notes_target, notes_w
 
 class note_sample:
-    def __init__(self,filename, audio_sw_F, audio_sw_C_pitch, audio_sw_C_inst,
+    def __init__(self,filename, 
+                 sw_F, 
+                 sw_C_pitch, sw_C_inst, sw_C_inst_foc,
                  pitch, instrument,
                  onset_s, duration_s):
         self.filename = filename
 #        self.audio_sw_F = audio_sw_F
-        self.audio_sw_C_pitch = audio_sw_C_pitch
-        self.audio_sw_C_inst = audio_sw_C_inst
+        self.sw_C_pitch = sw_C_pitch
+        self.sw_C_inst = sw_C_inst
+        self.sw_C_inst_foc = sw_C_inst_foc
         self.pitch = pitch
         self.instrument = instrument
         self.onset_s = onset_s

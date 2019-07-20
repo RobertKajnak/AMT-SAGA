@@ -36,6 +36,15 @@ if __name__ == '__main__':
                         help = 'Path to create log files, model structure ' 
                         'graphs, metrics etc.')
     
+    #Model parameters
+    parser.add_argument('-bins_per_semitone',
+                        default=4,
+                        type=int,
+                        help = 'Amount of bins used per semitone when using '
+                        'the CQ tranform. The overall size resulting will be '
+                        'used for linear elements as well. The default size '
+                        'is the minimum based on recent papers.')
+    
     #Model parallelization
     parser.add_argument('-batch_size',
                         default=8,
@@ -103,6 +112,7 @@ if __name__ == '__main__':
     path_data = args['data_path']
     path_output = args['output_path']
     path_sf = args['soundfont_path']
+    bins_per_tone = args['bins_per_semitone']
     synth_workers = args['synth_workers']
     par_train = args['partrain']
     batch_size = args['batch_size']
@@ -180,6 +190,8 @@ if __name__ == '__main__':
     #using the import here allows using the --help without loading the libraries
     try:            
         p = Hyperparams(path_data, path_sf, path_output = path_output,
+                        
+                        bins_per_tone = bins_per_tone,
                         
                         batch_size = batch_size,
                         parallel_train=par_train,

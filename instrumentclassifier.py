@@ -26,8 +26,9 @@ class InstrumentClassifier(res_net):
         elif variant == InstrumentClassifier.INSTRUMENT_DUAL:
             input_shape = [(params.instrument_bands, params.instrument_frames, 1),
                            (params.instrument_bands, params.instrument_frames, 1)]
-            kernel_size = params.kernel_sizeinstrument
-            pool_size = params.pool_size_instrument
+            #The *2 duplicates it [(2,4)]->[(2,4),(2,4)]*
+            kernel_size = params.kernel_size_instrument*2
+            pool_size = params.pool_size_instrument*2
         else:
             raise ValueError('Invalid Variant Selected')
         
@@ -50,8 +51,11 @@ class InstrumentClassifier(res_net):
         self.params = params
 
     def classify(self, spec, instrument_gold=None):
-        if isinstance(spec,list):
-            spec_shape = spec[0].shape
+        if isinstance(spec,list) or isinstance(spec,tuple):
+            if isinstance(spec[0],list) or isinstance(spec[0],tuple):
+                spec_shape = spec[0][0].shape
+            else:
+                spec_shape = spec[0].shape
         else:
             spec_shape = spec.shape
         if spec_shape != (self.params.instrument_bands,self.params.instrument_frames):
@@ -59,17 +63,31 @@ class InstrumentClassifier(res_net):
                              format((self.params.instrument_bands,
                                      self.params.instrument_frames),spec_shape))
 
-        if isinstance(spec,list):
-            cb_x=np.zeros([0]+list(spec[0].shape)+[1])
-            cb_y=np.zeros([0,1])
-            for specs,label in zip(spec,instrument_gold):
-                expanded_x = specs[np.newaxis,:,:,np.newaxis]
-                expanded_y = np.expand_dims([label],axis=0)
-                cb_x=np.concatenate((cb_x,expanded_x))
-                cb_y=np.concatenate((cb_y,expanded_y))
+        if isinstance(spec,list) or isinstance(spec,tuple):
+            if isinstance(spec[0],list) or isinstance(spec[0],tuple):
+                cb_xa = [np.zeros([0]+list(spec[0][0].shape)+[1]) for _ in range(len(spec[0]))]
+                cb_y=np.zeros([0,1])
                 
-            expanded = cb_x
-            gold_expanded = cb_y
+                for sp,label in zip(spec,instrument_gold):
+                    expanded_y = np.expand_dims([label],axis=0)
+                    cb_y=np.concatenate((cb_y,expanded_y))
+                    for ind,chan in enumerate(sp):
+                        expanded_x = chan[np.newaxis,:,:,np.newaxis]
+                        cb_xa[ind]=np.concatenate((cb_xa[ind],expanded_x))
+                        
+                expanded = cb_xa
+                gold_expanded = cb_y
+            else:
+                cb_x=np.zeros([0]+list(spec[0].shape)+[1])
+                cb_y=np.zeros([0,1])
+                for specs,label in zip(spec,instrument_gold):
+                    expanded_x = specs[np.newaxis,:,:,np.newaxis]
+                    expanded_y = np.expand_dims([label],axis=0)
+                    cb_x=np.concatenate((cb_x,expanded_x))
+                    cb_y=np.concatenate((cb_y,expanded_y))
+                    
+                expanded = cb_x
+                gold_expanded = cb_y
         else:
             expanded = spec[np.newaxis,:,:,np.newaxis]
             gold_expanded = np.expand_dims(instrument_gold,axis=0)

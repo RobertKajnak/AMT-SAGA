@@ -12,6 +12,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from functools import reduce
+import bisect
 
 from magenta.music import midi_io
 from magenta.protobuf import music_pb2
@@ -63,6 +64,7 @@ class audio_complete:
         self.center = center
         self.hl = hop_length if hop_length is not None else int(np.floor(n_fft/4))
         
+        self._fft_freq = librosa.core.fft_frequencies(sample_rate,n_fft)
         
     def clone(self):
         """Copies the parameters and a deepcopy of the available properties"""
@@ -187,6 +189,23 @@ class audio_complete:
         self._F = None
         self._wf = None
     
+    def _P(self,name):
+        """Returns the raw attribute, by name. 
+        Example: name=='wf' => return self._wf
+        """
+        if name == 'wf':
+            return self._wf
+        elif name == 'F':
+            return self._F
+        elif name == 'mag':
+            return self._mag
+        elif name == 'ph':
+            return self._ph
+        elif name == 'D':
+            return self._D
+        else:
+            raise ValueError('Requested attribute does not exist')
+    
     @property
     def shape(self):
         if self._mag is not None:
@@ -197,6 +216,7 @@ class audio_complete:
             return self._D.shape
         #if nothing esle is set, F needs to be calculated from wf
         return self.F.shape
+    
     
     def subtract(self,subtrahend, offset=0,attack_compensation=0,
                      normalize = True, relu = True, overkill_factor = 1):
@@ -255,6 +275,14 @@ class audio_complete:
 #        return librosa.core.frames_to_time(frames,sr=self.sr, hop_length=self.hl, 
 #                                           n_fft=self.N)
     
+    def midi_tone_to_FFT(self, tone):
+        """ Calculates the closest FFT bin (rounded down) to the midi tone
+        specified"""
+        f = librosa.core.midi_to_hz(tone)
+        ind = bisect.bisect_right(self._fft_freq,f) - 1
+        ind = 0 if ind==0 else ind-1
+        return ind
+    
     def section(self, start, end, duration_in_frames=None):
         """Creates a copy of a section and returns it. The D, F et.c will 
         remain calculated. If the section specified is bigger than the array, 
@@ -298,6 +326,23 @@ class audio_complete:
         nac._D = cc(self._D)
         
         return nac
+    
+    def section_power(self,name,band_min,band_max):
+        """Returns a an array containing a copy of the part of the spectra. 
+        if the maximmum band is outside the psecified range, the result will
+        be padded with 0s
+        params:
+            name: string. Can be one of the following: 'F','mag','ph','D'
+            band_min: lowest band, inclusive
+            band_max: highest band, exclusive
+        """
+        P = self._P(name)
+        h = P.shape[0]
+        cpd = copy.deepcopy(P[band_min:band_max,:])
+        if band_max>h:
+            cpd = np.concatenate((cpd,np.zeros((band_max-h,P.shape[1])))
+                                          ,axis=0)
+        return cpd
     
     def slice(self,start_in_frames, end_in_frames):
         """Takes a slice from both power and waveform, where available.
