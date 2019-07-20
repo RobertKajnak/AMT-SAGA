@@ -57,6 +57,7 @@ class res_net:
                  
                  checkpoint_dir=None,checkpoint_prefix='checkpoint',
                  checkpoint_frequency=5000,
+                 metrics_prefix='metrics_logs',
                  weights_load_checkpoint_filename=None,
                  starting_checkpoint_index=1,
                  
@@ -261,6 +262,7 @@ class res_net:
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_prefix = checkpoint_prefix
         self.checkpoint_frequency = checkpoint_frequency
+        self.metrics_prefix = metrics_prefix
         if checkpoint_frequency<1:
             self.checkpoint_dir = None
         #Counting starts from 1, otherwise the initial state is saved as well
@@ -360,7 +362,7 @@ class res_net:
                               y_pred_scaled,y_true_scaled]
         return custom_metrics
     
-    def save_metrics(self,directory='.',prefix='metrics_logs_', index=None,
+    def save_metrics(self,directory='.',prefix='metrics_logs', index=None,
                      training=True, test = True, use_csv=True):
         """ Saves the metrics until now to a file.
             params:
@@ -372,6 +374,7 @@ class res_net:
                 use_csv: If True, format=csv (numpy.savetxt) is used. 
                     If False format=npy (numpy.save) is used
         """
+        prefix+='_'
         traintest = []
         if training:
             traintest.append(('training',self.metrics_train))
@@ -392,7 +395,7 @@ class res_net:
                 np.savez_compressed(os.path.join(directory,prefix + index + tt[0]
                         + '.npz'),metrics=tt[1],names=self.metrics_names)
         
-    def load_metrics(self,directory='.',prefix='metrics_logs_', index = None,
+    def load_metrics(self,directory='.',prefix='metrics_logs', index = None,
                      training=True, test = True, use_csv=True, 
                      load_metric_names=False):
         """Replaces in this instance withthe metrics stored in the 
@@ -409,6 +412,7 @@ class res_net:
                 load_metric_names: replace the metrics_names in the instance
                     with the header of the file
         """
+        prefix += '_'
         if index is None:
             index=''
         else:
@@ -453,14 +457,16 @@ class res_net:
             self.metrics_test = [list(m) for m in self.metrics_test]
     
     def save_checkpoint(self):
-            self.logger.info('Saving checkpoint {}'.format(self.current_batch))
+            self.logger.info('Saving {} {}'
+                             .format(self.checkpoint_prefix,
+                                     self.current_batch))
             if self.current_batch-self.checkpoint_frequency>0:
                 batch_start = self.current_batch-self.checkpoint_frequency
             else:
                 batch_start = 0
                 
-            progress_str = ('Metrics avaraged over the last '
-                            '{} batches: ').format(
+            progress_str = ('{} avaraged over the last '
+                            '{} batches: ').format(self.metrics_prefix,
                                     self.current_batch-batch_start)
             
             avgs = np.average(self.metrics_train[
@@ -482,7 +488,8 @@ class res_net:
             #possible corruption is an alternative, but considering the size
             #difference between the weights file and logs, this isn't so bad
             #either (10 MB vs 100Kb)
-            self.save_metrics(self.checkpoint_dir, index=self.current_batch,
+            self.save_metrics(self.checkpoint_dir, prefix=self.metrics_prefix, 
+                              index=self.current_batch,
                               training=True, test = False, use_csv=False)
     
     def train(self,x,y):

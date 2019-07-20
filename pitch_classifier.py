@@ -11,7 +11,7 @@ from RDCNN import res_net
 
 
 class pitch_classifier(res_net):
-    def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch'):
+    def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch',metrics_prefix='metrics_pitch'):
         super().__init__(input_shapes=[(params.pitch_bands, params.pitch_frames, 1)],
                          kernel_sizes=params.kernel_size_pitch, pool_sizes=params.pool_size_pitch,
                          output_classes=1,
@@ -26,13 +26,21 @@ class pitch_classifier(res_net):
                          checkpoint_dir=params.checkpoint_dir, 
                          checkpoint_frequency=params.checkpoint_frequency,
                          checkpoint_prefix= checkpoint_prefix,
+                         metrics_prefix = metrics_prefix,
                          metrics=[],
                          
                          logging_parent = 'AMT-SAGA')
 
         self.params = params
         
-    def classify(self, spec, pitch_gold = None):
+    def classify(self, spec, pitch_gold = None, test_phase = False):
+        """ Trains, test and classifies the provided sample.
+        params:
+            spec: sample
+            instrument_gold: if None, prediction is performed, without checkking
+                the correctness of the result
+            test_phase: if set to true, testing is done, otherwise training
+        """
         if isinstance(spec,list):
             spec_shape = spec[0].shape
         else:
@@ -60,8 +68,9 @@ class pitch_classifier(res_net):
         if pitch_gold is None:
             pitch_pred = self.predict(expanded)
         else:
-            pitch_pred = self.train(expanded, gold_expanded)
-
-        # return int(np.random.rand()*107)
+            if test_phase:
+                pitch_pred = self.test(expanded, gold_expanded)
+            else:
+                pitch_pred = self.train(expanded, gold_expanded)
 
         return pitch_pred

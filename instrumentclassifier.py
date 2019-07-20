@@ -33,6 +33,7 @@ class InstrumentClassifier(res_net):
             raise ValueError('Invalid Variant Selected')
         
         checkpoint_prefix = 'checkpoint_' + variant
+        metrics_prefix = 'metrics_' + variant
         super().__init__(input_shapes=input_shape,
                          kernel_sizes=kernel_size, pool_sizes=pool_size,
                          output_classes=params.instrument_classes,
@@ -44,13 +45,21 @@ class InstrumentClassifier(res_net):
                          residual_layer_frequencies=params.residual_layer_frequencies,
                          checkpoint_dir=params.checkpoint_dir, checkpoint_frequency=params.checkpoint_frequency,
                          checkpoint_prefix= checkpoint_prefix,
+                         metrics_prefix = metrics_prefix,
                          metrics = [],
                          
                          logging_parent = 'AMT-SAGA')
 
         self.params = params
 
-    def classify(self, spec, instrument_gold=None):
+    def classify(self, spec, instrument_gold=None, test_phase = False):
+        """ Trains, test and classifies the provided sample.
+        params:
+            spec: sample
+            instrument_gold: if None, prediction is performed, without checkking
+                the correctness of the result
+            test_phase: if set to true, testing is done, otherwise training
+        """
         if isinstance(spec,list) or isinstance(spec,tuple):
             if isinstance(spec[0],list) or isinstance(spec[0],tuple):
                 spec_shape = spec[0][0].shape
@@ -95,6 +104,9 @@ class InstrumentClassifier(res_net):
         if instrument_gold is None:
             instrument_pred = self.predict(expanded)
         else:
-            instrument_pred = self.train(expanded, gold_expanded)
+            if test_phase:
+                instrument_pred = self.test(expanded, gold_expanded)
+            else:
+                instrument_pred = self.train(expanded, gold_expanded)
             
         return instrument_pred

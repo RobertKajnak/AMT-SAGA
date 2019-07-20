@@ -107,13 +107,13 @@ def gen_model(model_name,params):
     return model, logger, batch_index
 
 @logged_thread
-def thread_classification(model_name,params,q_samples, training_finished, 
+def thread_classification(model_name,params,q_samples, training_state, 
                           training_lock = None):
     training_lock and training_lock.acquire()    
     model, logger, i_b = gen_model(model_name, params)
     training_lock and training_lock.release()
 
-    while training_finished.value == 0:
+    while training_state.value > 0:
         try:
             sample = q_samples.get(timeout=1)
         except EmptyException:
@@ -133,7 +133,7 @@ def thread_classification(model_name,params,q_samples, training_finished,
 #        print(sample[0][0].shape,sample[1][0])#DEBUG
         training_lock and training_lock.release()
         
-    if training_finished.value == 1:
+    if training_state.value == 0:
         logger.info('Training finished, saving {}'.format(model_name))
     else:
         logger.info('Training terminated, saving {}'.format(model_name))
@@ -144,13 +144,13 @@ def thread_classification(model_name,params,q_samples, training_finished,
     model.save_checkpoint()
     
 @logged_thread
-def init_sample_aquisition(samples_q,note_i,training_finished):
+def init_sample_aquisition(samples_q,note_i,training_state):
     global samples_q_g
     samples_q_g = samples_q
     global note_i_g
     note_i_g = note_i
-    global training_finished_g
-    training_finished_g = training_finished
+    global training_state_g
+    training_state_g = training_state
     
 @logged_thread
 def thread_sample_aquisition(filename,params):
@@ -182,7 +182,7 @@ def thread_sample_aquisition(filename,params):
               format(fn,ex))
         return
     #TODO only process an n notes long sectionf rom the song
-    while offset < mid.duration and training_finished_g.value==0:
+    while offset < mid.duration and training_state_g.value>0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         if note_gold is not None: 
             if note_gold.program>=params.instrument_classes:
@@ -240,11 +240,11 @@ def thread_sample_aquisition(filename,params):
                              pitch_gold, instrument_gold,
                              onset_gold, duration_gold)
                 
-        while training_finished_g.value==0:
+        while training_state_g.value>0:
             try:
                 samples_q_g.put(sample,timeout=1)
             except FullException:
-                if training_finished_g.value==0:
+                if training_state_g.value>0:
                     continue
                 else:
                     return
@@ -284,7 +284,7 @@ def thread_sample_aquisition(filename,params):
             audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
 @logged_thread
-def thread_training(samples_q, params,training_finished, 
+def thread_training(samples_q, params,training_state, 
                     allow_parallel_training=False):
 
     b_i=0
@@ -297,24 +297,24 @@ def thread_training(samples_q, params,training_finished,
     else:
         training_lock = None
     
-    model_names = ['pitch','instrument', 'instrument_focused', 'instrument_dual']
+    model_names = ['pitch','instrument', 'instrument_dual']
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
-                                  training_finished,
+                                  training_state,
                                   training_lock))
                         for model_name,q in zip(model_names,qs)]
     for proc in model_processes:
         proc.start()
     
-    while training_finished.value == 0:
+    while training_state.value > 0:
         sample_x,sample_y = [],[]
         i=0
-        while training_finished.value == 0 and i<params.batch_size :
+        while training_state.value > 0 and i<params.batch_size :
             try:
                 sample = samples_q.get(timeout=1)
             except EmptyException:
-                if training_finished.value==0:
+                if training_state.value>0:
                     continue
             except BrokenPipeError:
                 logger.debug('Broken Pipe Detected. Assuming training was '
@@ -326,18 +326,18 @@ def thread_training(samples_q, params,training_finished,
                 continue
             try:
                 sample_x.append((sample.sw_C_pitch,
-                                 sample.sw_C_inst,sample.sw_C_inst_foc,
+                                 sample.sw_C_inst,
                                  [sample.sw_C_inst,sample.sw_C_inst_foc]))
                 sample_y.append((sample.pitch,
                                  sample.instrument,
-                                 sample.instrument,sample.instrument))
+                                 sample.instrument))
                 i+=1
             except Exception:
                 logger.exception('Unexpected error while sending samples.'
                                  'Attempting to continue')
                 continue
             
-        if training_finished.value == 0:
+        if training_state.value > 0:
             try:
                 logger.debug('Sending Batch {}'.format(b_i))
                 b_i += 1
@@ -353,7 +353,7 @@ def thread_training(samples_q, params,training_finished,
     for proc in model_processes:
         proc.join()
         
-def attach_keyboard_abort(training_finished):
+def attach_keyboard_abort(training_state):
     held_down = set()
     key_q = KeyCode.from_char('q')
     key_Q = KeyCode.from_char('Q')
@@ -361,7 +361,7 @@ def attach_keyboard_abort(training_finished):
         held_down.add(key)
         if (key==key_q or key==key_Q) \
                 and Key.ctrl in held_down and Key.alt in held_down:
-            training_finished.value=2
+            training_state.value=-2
         
     def on_release(key):
         try:
@@ -383,39 +383,60 @@ def train_parallel(params):
     samples_q = Queue(params.batch_size)
 
     #Thread that does a training cycle each time q is full
-    training_finished = Value('b',0)
+    training_state = Value('b',1)
     proc_training = Process(target=thread_training, args=(samples_q,params,
-                                                          training_finished,
+                                                          training_state,
                                                           params.parallel_train))
     proc_training.start()
     
     if X_AVAILABLE:
-        listener = attach_keyboard_abort(training_finished)
+        listener = attach_keyboard_abort(training_state)
     else:
         logger.info('X not available. Stopping hotkey not available.')
         
     #Pre-loading sounfont here means that threads don't use the memory separately
     #And other tests have shown that it is thread-safe
     note_sequence(sf2_path = params.sf_path) 
-    dm.set_set('training') 
     note_index = Value('L',1)
     if params.synth_worker_count == 1:
-        init_sample_aquisition(samples_q,note_index,training_finished)
+        init_sample_aquisition(samples_q,note_index,training_state)
+        dm.set_set('training')
+        for fn in dm:
+            thread_sample_aquisition(fn, params)
+        #Empty any saples left over from the training
+        while not samples_q.empty():
+            samples_q.get()
+        dm.set_set('test')
         for fn in dm:
             thread_sample_aquisition(fn, params)
     else:
         pool = Pool(processes = params.synth_worker_count,
                     initializer=init_sample_aquisition,
-                    initargs=(samples_q,note_index,training_finished))  
+                    initargs=(samples_q,note_index,training_state))  
         
+        dm.set_set('training')
         results = [pool.apply_async(thread_sample_aquisition, 
+                                   args=(fn, params)
+                                   ) for fn in dm]
+        
+        #Join the threads without closing the pools
+        for result in results:
+            result.get()
+        #Empty any saples left over from the training
+        while not samples_q.empty():
+            samples_q.get()
+        #Switch to test set
+        logger.info('Switching to test phase.')
+        training_state.value = 2
+        dm.set_set('test')
+        results += [pool.apply_async(thread_sample_aquisition, 
                                    args=(fn, params)
                                    ) for fn in dm]
         for result in results:
             result.get()
         pool.close()
         pool.join()
-    training_finished.value = 1 
+    training_state.value = 0
     proc_training.join()
     if X_AVAILABLE:
         listener.stop()
