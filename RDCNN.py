@@ -362,18 +362,22 @@ class res_net:
                               y_pred_scaled,y_true_scaled]
         return custom_metrics
     
-    def save_metrics(self,directory='.',prefix='metrics_logs', index=None,
+    def save_metrics(self,directory='.',prefix=None, index=None,
                      training=True, test = True, use_csv=True):
         """ Saves the metrics until now to a file.
             params:
                 directory: directory to save to
-                prefix: 'training.format' and 'test.format' will be added to this
+                prefix: If None, self.metrics_prefix will be used, specified 
+                    in the consturctor
+                    'training.format' and 'test.format' will be added to this
                 index: appended after prefix
                 training: save the training metrics
                 test: save the testing metrics
                 use_csv: If True, format=csv (numpy.savetxt) is used. 
                     If False format=npy (numpy.save) is used
         """
+        if prefix is None:
+            prefix = self.metrics_prefix
         prefix+='_'
         traintest = []
         if training:
@@ -395,7 +399,7 @@ class res_net:
                 np.savez_compressed(os.path.join(directory,prefix + index + tt[0]
                         + '.npz'),metrics=tt[1],names=self.metrics_names)
         
-    def load_metrics(self,directory='.',prefix='metrics_logs', index = None,
+    def load_metrics(self,directory='.',prefix=None, index = None,
                      training=True, test = True, use_csv=True, 
                      load_metric_names=False):
         """Replaces in this instance withthe metrics stored in the 
@@ -404,6 +408,8 @@ class res_net:
                 directory: directory to load from
                 prefix: files should be of format prefix + 'training.format' and 
                     prefix+'test.csv'
+                    If None, self.metrics_prefix will be used, specified 
+                    in the consturctor
                 index: appears after prefix
                 training: load the training metrics
                 test: save the testing metrics
@@ -412,6 +418,8 @@ class res_net:
                 load_metric_names: replace the metrics_names in the instance
                     with the header of the file
         """
+        if prefix is None:
+            prefix = self.metrics_prefix
         prefix += '_'
         if index is None:
             index=''
@@ -488,7 +496,7 @@ class res_net:
             #possible corruption is an alternative, but considering the size
             #difference between the weights file and logs, this isn't so bad
             #either (10 MB vs 100Kb)
-            self.save_metrics(self.checkpoint_dir, prefix=self.metrics_prefix, 
+            self.save_metrics(self.checkpoint_dir, prefix=None, 
                               index=self.current_batch,
                               training=True, test = False, use_csv=False)
     
@@ -635,7 +643,7 @@ class res_net:
         if self.output_classes==1:
             mse_scaled = np.mean(self.get_metric_test('mse_scaled'))
             mse_not_scaled = np.mean(self.get_metric_test('mse'))
-            print('MSE for test data: scaled {:.3f}, not scaled: {}'.
+            self.logger.info('MSE for test data: scaled {:.3f}, not scaled: {}'.
                   format(mse_scaled,mse_not_scaled))
             if filename_test:
                 f = open(filename_test, "w")
@@ -654,20 +662,20 @@ class res_net:
                         writer.writerow(d)
                     
             if training:
-                print('\nTraining Results:  ')
                 true = self.get_metric_train('y_true')
                 pred = self.get_metric_train('y_pred')
-                print(classification_report(true,pred))
+                self.logger.info('Training Results:  \n' + 
+                                 classification_report(true,pred))
                 if filename_training:
                     save_report(filename_training,
                                 classification_report(true,pred,output_dict = True,
                                                       target_names = class_names))
                 
             if test:
-                print('\nTest Results:  ')
                 true = self.get_metric_test('y_true')
                 pred = self.get_metric_test('y_pred')
-                print(classification_report(true,pred))
+                self.logger.info('Test Results:  \n' + 
+                                 classification_report(true,pred))
                 if filename_test:
                     save_report(filename_test,
                                 classification_report(true,pred,output_dict = True,

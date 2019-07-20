@@ -76,14 +76,22 @@ def gen_model(model_name,params):
                 params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
         
     if params.autoload:
-        fn_check = get_latest_file(params.checkpoint_dir, prefix)
+        fn_check = get_latest_file(params.checkpoint_dir, model.checkpoint_prefix)
         check_ind = int(fn_check[fn_check.rfind('_')+1:fn_check.rfind('.')])
-        fn_metr = get_latest_file(params.checkpoint_dir,'metrics_logs')
-        metr_ind = fn_metr[:fn_metr.rfind('_training')]
-        metr_ind = int(metr_ind[metr_ind.rfind('_')+1:])
+        if fn_check is None:
+            raise ValueError('No checkppint fond in the checkpoint directory')
+        fn_metr = get_latest_file(params.checkpoint_dir, model.metrics_prefix)
+        if fn_metr is None:
+            logger.error('No metric found in checkpoint directory. '
+                         'Continuing without metrics')
+            model.load_weights(fn_check)
+            batch_index = 0
+        else:            
+            metr_ind = fn_metr[:fn_metr.rfind('_training')]
+            metr_ind = int(metr_ind[metr_ind.rfind('_')+1:])
+            
         if fn_metr is not None and fn_check is not None and \
             check_ind==metr_ind:
-            model.load_weights(fn_check)
             model.load_metrics(params.checkpoint_dir, index=metr_ind,
                               training=True, test = False, use_csv=False,
                               load_metric_names = False)
@@ -92,8 +100,8 @@ def gen_model(model_name,params):
             logger.info('{} continuing from batch {}'.
                         format(model_name,check_ind))
         else:
-            raise ValueError('Filenames missing of mismatched: {} {}'.
-                             format(fn_check,fn_metr))
+            logger.error('Filenames missing of mismatched: {} {}. Continuing '
+                         'without metrics'.format(fn_check,fn_metr))
     else:
         batch_index = 0
             
@@ -142,7 +150,27 @@ def thread_classification(model_name,params,q_samples, training_state,
 #                     load_metric_names=True) #DEBUG
 #    model.current_batch=len(model.metrics_train)-1#DEBUG
     model.save_checkpoint()
-    
+    try:
+        model.report(filename_test = os.path.join(params.checkpoint_dir,
+                                                  'test' + model.metrics_prefix
+                                                  + '.txt'))
+    except Exception as exc:
+        logger.info('Failed to generate report:'.format(exc))
+    try:
+        if 'pitch' in model_name or 'timing' in model_name:
+            m2p = [0,1,2,3,4,5,6]
+        else:
+            m2p = [0,1,2]
+        model.plot(metrics_to_plot= m2p,moving_average_window=10,
+             filename_training = os.path.join(params.checkpoint_dir,
+                                              'training_' + model.metrics_prefix
+                                              + '.png'),
+             filename_test = os.path.join(params.checkpoint_dir,
+                                          'test_' + model.metrics_prefix + 
+                                          '.png'))
+    except Exception as exc:#TODO something is wrong with the output
+        logger.info('Failed to plot model: {}'.format(exc))
+            
 @logged_thread
 def init_sample_aquisition(samples_q,note_i,training_state):
     global samples_q_g
@@ -168,7 +196,9 @@ def thread_sample_aquisition(filename,params):
 
     offset = 0
     
-    logger.info('Generating wav for midi {}'.format(fn))
+    total_note_estimation = len(mid.sequence.notes) #TODO improve by accounting for filters
+    logger.info('Generating wav for midi {} Estimated number of notes: {}'
+                .format(fn,total_note_estimation))
     try:
         mid_wf = audio_complete(mid.render(), params.N)
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
