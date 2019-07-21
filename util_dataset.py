@@ -7,11 +7,17 @@ def get_latest_file(directory, substring =''):
         directory: the directory to be searched
         substring: the files must contain this substring. Specify emptystring
             to consider all files
+            if it must contain multiple substrings, specify an array e.g. 
+            ['a','b']
     returns:
         full path to the file. If no matches are found, None is returned"""
     
     all_files = os.listdir(directory)
-    all_files = list(filter(lambda s: substring in s, all_files))
+    if isinstance(substring, str):
+        all_files = list(filter(lambda s: substring in s, all_files))
+    else:
+        all_files = list(filter(
+                lambda s: all([subs in s for subs in substring]),all_files))
     all_files = [os.path.join(str(directory),fn) for fn in all_files]
     all_files.sort(key=os.path.getmtime)
     if len(all_files)>0:

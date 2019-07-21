@@ -559,12 +559,12 @@ rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              pool_layer_frequency=pool_layer_frequency,
              feature_expand_frequency = feature_expand_frequency,
              residual_layer_frequencies=residual_layer_frequencies,
-             checkpoint_dir= './data/checkpoints', checkpoint_frequency = 200,
+             checkpoint_dir= './data/checkpoints/metrics_test', checkpoint_frequency = 2000,
              checkpoint_prefix = 'checkpoint_' + suffix)
-rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
+rn.plot_model(os.path.join(rn.checkpoint_dir,'model_' + suffix + '.png'))
 
 
-test_set_size = 420
+test_set_size = len(train_labels)//4
 pb = PB.ProgressBar(test_set_size,sound='beep')#(train_images.shape[0])
 for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -572,7 +572,7 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
     rn.train([expanded_image],expanded_label)
     pb.check_progress()
     
-test_set_size = 400
+test_set_size = len(test_labels)//2
 pb = PB.ProgressBar(test_set_size)
 for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]):
     expanded_image = np.expand_dims(image,axis=0)
@@ -580,12 +580,12 @@ for image,label in zip(test_images[:test_set_size,:],test_labels[:test_set_size]
     rn.test(expanded_image,expanded_label)
     pb.check_progress()
 
-rn.report(training=True, filename_training=os.path.join(res_dir,'training' + suffix + '.csv'),
+rn.report(training=True, filename_training=os.path.join(rn.checkpoint_dir,'training' + suffix + '.csv'),
           test = True,   filename_test = os.path.join(res_dir,'test' + suffix + '.csv'),
                           class_names = class_names)
 
 rn.plot(metrics_to_plot=[1],moving_average_window=100,
-             filename_training = os.path.join(res_dir,'training' + suffix + '.png'), 
+             filename_training = os.path.join(rn.checkpoint_dir,'training' + suffix + '.png'), 
              filename_test = os.path.join(res_dir,'test' + suffix + '.png'))
 #%% Verify correct checkpoint load
 checkpoint_idx = 2000

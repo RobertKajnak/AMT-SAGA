@@ -105,7 +105,7 @@ class InstrumentClassifier(res_net):
             instrument_pred = self.predict(expanded)
         else:
             if test_phase:
-                instrument_pred = self.test(expanded, gold_expanded)
+                instrument_pred = self.test(expanded, gold_expanded, use_predict=True)
             else:
                 instrument_pred = self.train(expanded, gold_expanded)
             

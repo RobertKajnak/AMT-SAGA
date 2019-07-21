@@ -76,11 +76,13 @@ def gen_model(model_name,params):
                 params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
         
     if params.autoload:
-        fn_check = get_latest_file(params.checkpoint_dir, model.checkpoint_prefix)
+        fn_check = get_latest_file(params.checkpoint_dir, 
+                                   [model.checkpoint_prefix,'.h5'])
         check_ind = int(fn_check[fn_check.rfind('_')+1:fn_check.rfind('.')])
         if fn_check is None:
             raise ValueError('No checkppint fond in the checkpoint directory')
-        fn_metr = get_latest_file(params.checkpoint_dir, model.metrics_prefix)
+        fn_metr = get_latest_file(params.checkpoint_dir, 
+                                  [model.metrics_prefix,'training','.npz'])
         if fn_metr is None:
             logger.error('No metric found in checkpoint directory. '
                          'Continuing without metrics')
@@ -92,9 +94,15 @@ def gen_model(model_name,params):
             
         if fn_metr is not None and fn_check is not None and \
             check_ind==metr_ind:
-            model.load_metrics(params.checkpoint_dir, index=metr_ind,
-                              training=True, test = False, use_csv=False,
-                              load_metric_names = False)
+            try:
+                model.load_metrics(params.checkpoint_dir, index=metr_ind,
+                                  training=True, test = True, use_csv=False,
+                                  load_metric_names = False)
+            except:
+                logger.info('No test data found. Loading only training data')
+                model.load_metrics(params.checkpoint_dir, index=metr_ind,
+                                  training=True, test = False, use_csv=False,
+                                  load_metric_names = False)
             model.current_batch = check_ind
             batch_index = check_ind
             logger.info('{} continuing from batch {}'.
@@ -135,7 +143,12 @@ def thread_classification(model_name,params,q_samples, training_state,
         logger.detailed('Starting {} Classification for Batch {}'.format(model_name,i_b))
         i_b+=1
         try:
-            model.classify(sample[0],sample[1]) #!DEBUG
+            if training_state.value == 1:
+                model.classify(sample[0],sample[1]) #!DEBUG
+            elif training_state.value == 2:
+                model.classify(sample[0],sample[1],test_phase=True)
+            elif training_state.value == 3:
+                model.classify(sample[0],None)
         except:#TODO: Try
             logger.exception('An Error occured while processing the sample. Skipping')
 #        print(sample[0][0].shape,sample[1][0])#DEBUG
@@ -154,22 +167,30 @@ def thread_classification(model_name,params,q_samples, training_state,
         model.report(filename_test = os.path.join(params.checkpoint_dir,
                                                   'test' + model.metrics_prefix
                                                   + '.txt'))
-    except Exception as exc:
-        logger.info('Failed to generate report:'.format(exc))
+    except Exception:
+        logger.exception('Failed to generate report.')
     try:
         if 'pitch' in model_name or 'timing' in model_name:
             m2p = [0,1,2,3,4,5,6]
         else:
             m2p = [0,1,2]
-        model.plot(metrics_to_plot= m2p,moving_average_window=10,
+        model.plot(metrics_to_plot= m2p,moving_average_window=1,
              filename_training = os.path.join(params.checkpoint_dir,
                                               'training_' + model.metrics_prefix
                                               + '.png'),
              filename_test = os.path.join(params.checkpoint_dir,
                                           'test_' + model.metrics_prefix + 
                                           '.png'))
-    except Exception as exc:#TODO something is wrong with the output
-        logger.info('Failed to plot model: {}'.format(exc))
+             
+        model.plot(metrics_to_plot= m2p,moving_average_window=50,
+             filename_training = os.path.join(params.checkpoint_dir,
+                                              'training_' + model.metrics_prefix
+                                              + '_ws50.png'),
+             filename_test = os.path.join(params.checkpoint_dir,
+                                          'test_' + model.metrics_prefix + 
+                                          '_ws50.png'))
+    except Exception:
+        logger.exception('Failed to plot model:.')
             
 @logged_thread
 def init_sample_aquisition(samples_q,note_i,training_state):

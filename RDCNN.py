@@ -101,6 +101,7 @@ class res_net:
             checkpoint_prefix: The filename for checkpoints. 
                 E.g. a prefix ='foo' will yield filenames of 
                 'foo_1000.h5', 'foo_2000.h5' etc.
+            metrics_prefix: same as checkpoint_prefix, but for metrics
             checkpoint_frequency: the model weights will be saved every 
                 nth batch
             weights_load_checkpoint_filename: weights will be attempted to be
@@ -380,9 +381,9 @@ class res_net:
             prefix = self.metrics_prefix
         prefix+='_'
         traintest = []
-        if training:
+        if training and self.metrics_train != []:
             traintest.append(('training',self.metrics_train))
-        if test:
+        if test and self.metrics_test != []:
             traintest.append(('test',self.metrics_test))
             
         if index is None:
@@ -498,7 +499,7 @@ class res_net:
             #either (10 MB vs 100Kb)
             self.save_metrics(self.checkpoint_dir, prefix=None, 
                               index=self.current_batch,
-                              training=True, test = False, use_csv=False)
+                              training=True, test = True, use_csv=False)
     
     def train(self,x,y):
         """Wrapper for train_on_batch. 
@@ -634,21 +635,46 @@ class res_net:
         else:
             return np.array([val[ind] for val in self.metrics_test])
 
-    def report(self, class_names = None,
+    def report(self, class_names = None, sanitize = False,
                training=False, test = True,
                filename_training=None, filename_test = None):
         """Prints the training and test report 
-        For single class networks, only the test is considered"""
+        For single class networks, only the test is considered
+        params:
+            class_names: see classification_report
+            sanitize: if True, predictions that have no support will have both
+                true and predicted values set to -1. This can prevent some 
+                glitches, but will reduce report accuracy. Use with caution
+            training: include training data
+            test: include test data
+            filename_training: filename to use when saving the report. 
+                To not save leave on default=None
+            filename_test: filename to use when saving the report. 
+                To not save leave on default=None"""
         
         if self.output_classes==1:
-            mse_scaled = np.mean(self.get_metric_test('mse_scaled'))
-            mse_not_scaled = np.mean(self.get_metric_test('mse'))
-            self.logger.info('MSE for test data: scaled {:.3f}, not scaled: {}'.
-                  format(mse_scaled,mse_not_scaled))
+                
+            avgs = []
+            for m_name in self.metrics_names:
+                avg = np.mean(self.get_metric_test(m_name))
+                avgs.append(avg)
+                self.logger.info(m_name + ': ' + '{:.4f}'.format(avg))
+                
             if filename_test:
                 f = open(filename_test, "w")
-                f.write(str(mse_scaled) + '\n' + str(mse_not_scaled))
+                for idx,avg in enumerate(avgs):
+                    f.write(self.metrics_names[idx] + ' ' +  str(avg) +'\n')
                 f.close()
+                
+#            mse_scaled = np.mean(self.get_metric_test('mse_scaled'))
+#            mse_not_scaled = np.mean(self.get_metric_test('mse'))
+#            self.logger.info('MSE for test data: scaled: {:.4f}, '
+#                             'not scaled: {:.4f}'.
+#                             format(mse_scaled,mse_not_scaled))
+#            if filename_test:
+#                f = open(filename_test, "w")
+#                f.write(str(mse_scaled) + '\n' + str(mse_not_scaled))
+#                f.close()
         else:
             def save_report(fn,rep):
                  with open(fn, 'w', newline='') as csvfile:
@@ -664,6 +690,11 @@ class res_net:
             if training:
                 true = self.get_metric_train('y_true')
                 pred = self.get_metric_train('y_pred')
+                if sanitize:
+                    for i in range(len(pred)):
+                        if pred[i] not in true:
+                            pred[i] = -1
+                            true[i] = -1
                 self.logger.info('Training Results:  \n' + 
                                  classification_report(true,pred))
                 if filename_training:
@@ -674,6 +705,11 @@ class res_net:
             if test:
                 true = self.get_metric_test('y_true')
                 pred = self.get_metric_test('y_pred')
+                if sanitize:
+                    for i in range(len(pred)):
+                        if pred[i] not in true:
+                            pred[i] = -1
+                            true[i] = -1
                 self.logger.info('Test Results:  \n' + 
                                  classification_report(true,pred))
                 if filename_test:
