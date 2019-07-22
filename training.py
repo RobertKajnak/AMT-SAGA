@@ -328,11 +328,14 @@ def thread_sample_aquisition(filename,params):
     #                audio_sw.save(fn_base+'_short_window.flac')
                     note_guessed.save(fn_base + '_guessed.mid')
                     ac_note_guessed.save(fn_base+'_guessed.flac')
-                
-                    audio_w.subtract(ac_note_guessed, offset=onset_gold)
-                    audio_w.save(fn_base + '_after_subtr.flac')
-        else:#Otherwise the lock will cause race conditions
-            audio_w.subtract(ac_note_guessed, offset=onset_gold)
+                    #This way the subtractoin is done twice, however the 
+                    #subtraction on the other threads will not be locked,
+                    #the lock expires after checking the note_i_g.value
+                    audio_subd = audio_w.clone()
+                    audio_subd.subtract(ac_note_guessed, offset=onset_gold)
+                    audio_subd.save(fn_base + '_after_subtr.flac')
+                    
+        audio_w.subtract(ac_note_guessed, offset=onset_gold)
             
 @logged_thread
 def thread_training(samples_q, params,training_state, 
