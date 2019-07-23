@@ -656,11 +656,13 @@ class res_net:
                 
             avgs = []
             for m_name in self.metrics_names:
-                avg = np.mean(self.get_metric_test(m_name))
-                avgs.append(avg)
-                self.logger.info(m_name + ': ' + '{:.4f}'.format(avg))
+                if self.get_metric_test(m_name) is not None \
+                and len(self.get_metric_test(m_name))>0:
+                    avg = np.mean(self.get_metric_test(m_name))
+                    avgs.append(avg)
+                    self.logger.info(m_name + ': ' + '{:.4f}'.format(avg))
                 
-            if filename_test:
+            if filename_test and len(avgs)>0:
                 f = open(filename_test, "w")
                 for idx,avg in enumerate(avgs):
                     f.write(self.metrics_names[idx] + ' ' +  str(avg) +'\n')

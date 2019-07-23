@@ -410,9 +410,9 @@ class audio_complete:
                 highest_note = 'C8', lowest_note='A0'):
         
         nbins = (librosa.note_to_midi(highest_note) - 
-                 librosa.note_to_midi(lowest_note))*bins_per_note
+                 int(librosa.note_to_midi(lowest_note))*bins_per_note)
         C = librosa.cqt(self.wf,sr=self.sr,fmin=librosa.note_to_hz(lowest_note),
-                        n_bins=nbins,bins_per_octave=12*bins_per_note,
+                        n_bins=nbins,bins_per_octave=int(12*bins_per_note),
                         filter_scale=2,hop_length = self.hl)
         
         if magnitude_only:
@@ -423,6 +423,24 @@ class audio_complete:
 
         return self._resize(C[:,s:t],target_frame_count)
     
+    @staticmethod
+    def compress_bands(spectrum, bands=80):
+        """ Compresses the frequency bands by averaging neighbouring bands.
+        Naive approach. Will cause artefacts. Use with caution
+        params:
+            spectrum: the power spectrum to compress
+            bands: number of bands desired at the output. If there is 
+                a remainder, the last ones are ignored
+                #the last will be summed with the previous ones.
+                #Example: [1,2,3,4,5] -> 2 -> [1+2],[3+4+5]
+        """
+        ns = np.zeros((bands,spectrum.shape[1]))
+        r = spectrum.shape[0] // bands
+        for i in range(bands):
+            for j in range(spectrum.shape[1]):
+                ns[i,j] = np.mean(spectrum[r*i:r*(i+1),j]) 
+        return ns
+        
     
     def resize(self,start,duration,target_frame_count, attribs=['F']):
         """ A new ac is returned that has a single data attribute set, 

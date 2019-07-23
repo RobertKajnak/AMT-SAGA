@@ -20,8 +20,7 @@ try:
 except:
     X_AVAILABLE = False
 
-#from onsetdetector import OnsetDetector as OnsetDetector
-#from durationdetector import DurationDetector as DurationDetector
+from timing_classifier import timming_classifier as TimingClassifier
 from pitch_classifier import pitch_classifier as PitchClassifier
 from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 from util_dataset import DataManager, get_latest_file
@@ -54,23 +53,29 @@ def logged_thread(func):
     return wrapper
 
 def gen_model(model_name,params):
+    logger = logging.getLogger('AMT-SAGA.' + model_name + '_class')
+    checkpoint_prefix = 'checkpoint_' + model_name
+    
+    if model_name == 'timing_start':
+        logger.info('Loading Timing Start Detector')
+        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix)
+    if model_name == 'timing_end':
+        logger.info('Loading Timing End Detector')
+        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix)
+        
     if model_name == 'pitch':
-        logger = logging.getLogger('AMT-SAGA.pitch_class')
         logger.info('Loading Pitch Classifier')
-        prefix  = 'checkpoint_pitch'
-        model = PitchClassifier(params, checkpoint_prefix= prefix)
+        model = PitchClassifier(params, checkpoint_prefix= checkpoint_prefix)
+        
     if model_name == 'instrument':
-        logger = logging.getLogger('AMT-SAGA.instrument_class')
         logger.info('Loading Instrument Classifier')
         model = InstrumentClassifier(params, 
                                      variant=InstrumentClassifier.INSTRUMENT)
     if model_name == 'instrument_focused':
-        logger = logging.getLogger('AMT-SAGA.instrument_focused_class')
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED)
     if model_name == 'instrument_dual':
-        logger = logging.getLogger('AMT-SAGA.instrument_dual_class')
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
@@ -162,7 +167,12 @@ def thread_classification(model_name,params,q_samples, training_state,
 #                     training=True, test = False, use_csv=False, 
 #                     load_metric_names=True) #DEBUG
 #    model.current_batch=len(model.metrics_train)-1#DEBUG
-    model.save_checkpoint()
+    try:
+        logger.info('Saving last checkpoint')
+        model.save_checkpoint()
+    except:
+        logger.exception('Error occured during saving the checkpoint')
+        
     try:
         model.report(filename_test = os.path.join(params.checkpoint_dir,
                                                   'test' + model.metrics_prefix
@@ -191,6 +201,7 @@ def thread_classification(model_name,params,q_samples, training_state,
                                           '_ws50.png'))
     except Exception:
         logger.exception('Failed to plot model:.')
+    logger.info('Checkpoints saved, concluding model thread')
             
 @logged_thread
 def init_sample_aquisition(samples_q,note_i,training_state):
@@ -269,7 +280,13 @@ def thread_sample_aquisition(filename,params):
                                                        params.window_size_note_time)
                 #TODO:check if this should be halfwindow to make the window not include the first note after the offset
                 continue
-    
+#            C_timing = audio_w.slice_C(0,params.window_size_note_time,
+#                                       params.timing_frames,
+#                                       bins_per_note=1)
+            
+            C_timing = audio_complete.compress_bands(audio_w.mag,
+                                        bands = params.timing_bands)#TODO temp
+            C_timing = audio_complete._resize(C_timing,params.timing_frames)
             audio_sw = audio_w.resize(onset_gold, duration_gold, 
                                       params.pitch_frames,
                                       attribs=['mag'])
@@ -284,12 +301,14 @@ def thread_sample_aquisition(filename,params):
             C_sw_inst_foc = audio_sw.section_power('mag',
                                                   fft_bin_min,fft_bin_max)#TODO this only works for train and test
         except:
-            logger.info('Faulty note in midi {}. Skipping file'.format(fn))
+            logger.exception('Faulty note in midi {}. Skipping file'.format(fn))
             return
 
-        sample = note_sample(fn, None, C_sw_pitch, C_sw_inst, C_sw_inst_foc, 
+        sample = note_sample(fn,
+                             C_timing,
+                             C_sw_pitch, C_sw_inst, C_sw_inst_foc, 
                              pitch_gold, instrument_gold,
-                             onset_gold, duration_gold)
+                             onset_gold, onset_gold + duration_gold)
                 
         while training_state_g.value>0:
             try:
@@ -351,7 +370,8 @@ def thread_training(samples_q, params,training_state,
     else:
         training_lock = None
     
-    model_names = ['pitch','instrument', 'instrument_dual']
+    model_names = ['timing_start', 'timing_end']
+    #'pitch', 'instrument', 'instrument_focused', 'instrument_dual']
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
@@ -379,10 +399,13 @@ def thread_training(samples_q, params,training_state,
                                  'attempting to continue')
                 continue
             try:
-                sample_x.append((sample.sw_C_pitch,
+                sample_x.append((sample.C_timing,
+                                 sample.sw_C_pitch,
                                  sample.sw_C_inst,
                                  [sample.sw_C_inst,sample.sw_C_inst_foc]))
-                sample_y.append((sample.pitch,
+                sample_y.append((sample.time_start,
+                                 sample.time_start,
+                                 sample.pitch,
                                  sample.instrument,
                                  sample.instrument))
                 i+=1
@@ -404,8 +427,10 @@ def thread_training(samples_q, params,training_state,
                              'terminated.')
                 break
       
+    logger.info('Training Thread finished, waiting for models to finish')
     for proc in model_processes:
         proc.join()
+    logger.info('Models terminated')
         
 def attach_keyboard_abort(training_state):
     held_down = set()
@@ -481,15 +506,17 @@ def train_parallel(params):
             samples_q.get()
         #Switch to test set
         logger.info('Switching to test phase.')
-        training_state.value = 2
         dm.set_set('test')
+        training_state.value = 2
         results += [pool.apply_async(thread_sample_aquisition, 
                                    args=(fn, params)
                                    ) for fn in dm]
         for result in results:
             result.get()
+        logger.info('Training phase finished. Wrapping up')
         pool.close()
         pool.join()
+        
     training_state.value = 0
     proc_training.join()
     if X_AVAILABLE:

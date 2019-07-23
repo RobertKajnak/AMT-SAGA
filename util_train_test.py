@@ -27,10 +27,10 @@ class Hyperparams:
         self.H = np.int(N / 4) if H is None else H
         self.window_size_note_time = 6 if window_size_note_time is None else window_size_note_time
         
-        self.timing_frames = 258
-        self.timing_bands = 42
-#        self.kernel_size_timing = [(32, 3), (32,3)]
-#        self.pool_size_timing = [(5, 2), (5, 2)]
+        self.timing_frames = int(self.window_size_note_time * self.sr/self.H)
+        self.timing_bands = 40 * bins_per_tone
+        self.kernel_size_timing = [(2, 16)]
+        self.pool_size_timing = [(2, 8)]
         
         self.pitch_frames = 8
         self.pitch_bands = 87
@@ -77,18 +77,27 @@ def relevant_notes(sequence, offset, duration):
     notes_w.shift(-offset + minus)
     return notes_target, notes_w
 
+def check_shape():
+    pass
+
+def list_to_nd_array():
+    pass
+
+def valid_note():
+    pass
+
 class note_sample:
     def __init__(self,filename, 
-                 sw_F, 
+                 C_timing, 
                  sw_C_pitch, sw_C_inst, sw_C_inst_foc,
                  pitch, instrument,
-                 onset_s, duration_s):
+                 time_start, time_end):
         self.filename = filename
-#        self.audio_sw_F = audio_sw_F
+        self.C_timing = C_timing
         self.sw_C_pitch = sw_C_pitch
         self.sw_C_inst = sw_C_inst
         self.sw_C_inst_foc = sw_C_inst_foc
         self.pitch = pitch
         self.instrument = instrument
-        self.onset_s = onset_s
-        self.duration_s = duration_s
+        self.time_start = time_start
+        self.time_end = time_end

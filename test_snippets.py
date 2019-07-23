@@ -475,11 +475,12 @@ buckets = 4096
 
 #Generate notes
 ns = nsequence(sf2_path = sf_path)
-ns.add_note(0,0,'G4',start=0,end=2)
-ns.add_note(0,0,'b',start=0,end=2)
-ns.add_note(0,0,'D5',start=0,end=2)
+inst = 0
+ns.add_note(0,inst,'G3',start=0,end=2)
+ns.add_note(0,inst,'b',start=0,end=2)
+ns.add_note(0,inst,'D4',start=0,end=2)
 
-ns.add_note(0,0,'C3',start=0.5,end=1.5)
+ns.add_note(0,inst,'C5',start=0.5,end=1.5)
 
 #Generate wave and spectral representations
 wf = ns.render()
@@ -487,7 +488,7 @@ ac = util_audio.audio_complete(wf,buckets)
 
 #same for the C only
 guess = nsequence()
-guess.add_note(0,0,48,0,1)
+guess.add_note(0,inst,'C5',0,1)
 ac_guess = util_audio.audio_complete(guess.render(),buckets)
 
 #Subtract. Create a copy to plot later
@@ -498,10 +499,11 @@ ac_sub.subtract(ac_guess,offset=0.5,attack_compensation = 0)
 util_audio.plot_specs([ac_guess,ac,ac_sub])
 
 #Save both midi and wav
-path = './data/'
-ac_guess.save(path + 'wave_test_guess.flac')
-ac.save(path + 'wave_test.flac')
-ac_sub.save(path + 'wave_test_sub.flac',)
+path = './output/subtraction_demo/'
+filename = 'piano_pitch_-1_off'
+ac_guess.save(os.path.join(path, filename + '_test_guess.flac'))
+ac.save(os.path.join(path,filename + '_test.flac'))
+ac_sub.save(os.path.join(path,filename + '_test_sub.flac'))
 
 #%% File save test
 #    y_foreground = librosa.istft(D_harmonic)
@@ -1063,7 +1065,8 @@ ac_short.plot_spec()
 plt.figure(figsize=(10, 5))
 librosa.display.specshow(librosa.amplitude_to_db(np.abs(C), ref=np.max),
                           sr=ac_short.sr, hop_length=ac_short.hl,
-                          x_axis='time', y_axis='cqt_note')
+                          x_axis='time', y_axis='cqt_note',
+                          fmin=librosa.note_to_hz('A1'))
 plt.colorbar(format='%+2.0f dB')
 plt.title('Constant-Q power spectrum')
 plt.tight_layout()
@@ -1075,10 +1078,27 @@ plt.tight_layout()
 #            filter_scale=2, sparsity=0.01)
 #print(Q.shape)
 #librosa.display.specshow(librosa.amplitude_to_db(np.abs(Q[:,43:130]), ref=np.max),
-#                          sr=sr, x_axis='time', y_axis='cqt_note')
+#                          sr=sr, x_axis='time', y_axis='cqt_note',
+#                            fmin=librosa.note_to_hz('A1'))
 #plt.colorbar(format='%+2.0f dB')
 #plt.title('Constant-Q power spectrum')
 #plt.tight_layout()
+
+#%% Compression test
+r = 2
+Cc = audio_complete.compress_bands(C,r)
+print(C.shape,Cc.shape)
+plt.figure(figsize=(10, 5))
+librosa.display.specshow(librosa.amplitude_to_db(np.abs(C), ref=np.max),
+                          sr=ac_short.sr, hop_length=ac_short.hl,
+                          x_axis='time', y_axis='cqt_note',
+                          fmin=librosa.note_to_hz('A1'))
+plt.figure(figsize=(10, 5))
+librosa.display.specshow(librosa.amplitude_to_db(np.abs(Cc), ref=np.max),
+                          sr=ac_short.sr, hop_length=ac_short.hl,
+                          x_axis='time', y_axis='cqt_note',
+                          fmin=librosa.note_to_hz('A1'))
+
 
 #%% Testing compression / Essentia
 
