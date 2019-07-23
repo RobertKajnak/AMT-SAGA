@@ -26,7 +26,8 @@ from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
 from util_dataset import DataManager, get_latest_file
 from util_audio import note_sequence
 from util_audio import audio_complete
-from util_train_test import relevant_notes,note_sample, PATH_MODEL_META,PATH_NOTES
+from util_train_test import relevant_notes, note_sample, validate_note, \
+    PATH_MODEL_META,PATH_NOTES
 
 try:
     logging.DETAILED
@@ -229,7 +230,15 @@ def thread_sample_aquisition(filename,params):
     offset = 0
     
     total_note_estimation = len(mid.sequence.notes) #TODO improve by accounting for filters
-    logger.info('Generating wav for midi {} Estimated number of notes: {}'
+    if params.use_precise_note_count:
+        s=0
+        for note in mid.sequence.notes:
+           if not validate_note(note,params):
+               s+=1        
+        logger.info('Generating wav for midi {} Notes to be processed: {}'
+                .format(fn,total_note_estimation))
+    else:
+        logger.info('Generating wav for midi {} Estimated number of notes: {}'
                 .format(fn,total_note_estimation))
     try:
         mid_wf = audio_complete(mid.render(), params.N)
@@ -246,17 +255,11 @@ def thread_sample_aquisition(filename,params):
     #TODO only process an n notes long sectionf rom the song
     while offset < mid.duration and training_state_g.value>0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
-        if note_gold is not None: 
-            if note_gold.program>=params.instrument_classes:
-                logger.debug('Program out of range: {}'.format(note_gold.program))
-                continue
-            elif note_gold.pitch<params.pitch_low or note_gold.pitch>params.pitch_high:
-                logger.debug('Pitch out of range: {}'.note_gold.pitch)
-                continue
-            elif note_gold.is_drum:
-                continue#TODO: test this
-        # training
+        
         if note_gold is not None:
+            note_problem = validate_note(note_gold,params)
+            if note_problem:
+                logging.debug(note_problem)
             logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
                   format(offset, note_gold.start_time,note_gold.end_time))
         
@@ -292,10 +295,10 @@ def thread_sample_aquisition(filename,params):
                                       attribs=['mag'])
             C_sw_pitch = audio_w.slice_C(onset_gold, duration_gold, 
                                       params.pitch_frames,
-                                      bins_per_note=1)
+                                      bins_per_tone=1)
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
-                                        bins_per_note=params.instrument_bins_per_tone)
+                                        bins_per_tone=params.instrument_bins_per_tone)
             fft_bin_min = audio_w.midi_tone_to_FFT(note_gold.pitch)
             fft_bin_max = fft_bin_min + params.instrument_bands
             C_sw_inst_foc = audio_sw.section_power('mag',
@@ -370,8 +373,10 @@ def thread_training(samples_q, params,training_state,
     else:
         training_lock = None
     
-    model_names = ['timing_start', 'timing_end']
-    #'pitch', 'instrument', 'instrument_focused', 'instrument_dual']
+    model_names = [#'timing_start', 'timing_end',
+#                    'pitch', 'instrument',
+                    'instrument_focused', 'instrument_dual'
+                    ]
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
@@ -399,13 +404,18 @@ def thread_training(samples_q, params,training_state,
                                  'attempting to continue')
                 continue
             try:
-                sample_x.append((sample.C_timing,
-                                 sample.sw_C_pitch,
-                                 sample.sw_C_inst,
+                sample_x.append((
+#                                 sample.C_timing,
+#                                 sample.C_timing,
+#                                 sample.sw_C_pitch,
+#                                 sample.sw_C_inst,
+                                  sample.sw_C_inst_foc,
                                  [sample.sw_C_inst,sample.sw_C_inst_foc]))
-                sample_y.append((sample.time_start,
-                                 sample.time_start,
+                sample_y.append((
+#                                 sample.time_start,
+#                                 sample.time_end,
                                  sample.pitch,
+                                 sample.instrument,
                                  sample.instrument,
                                  sample.instrument))
                 i+=1

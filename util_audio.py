@@ -406,13 +406,13 @@ class audio_complete:
     
     def slice_C(self,start,duration,target_frame_count,
                 magnitude_only = True,
-                bins_per_note = 1,filter_scale=2,
+                bins_per_tone = 1,filter_scale=2,
                 highest_note = 'C8', lowest_note='A0'):
         
-        nbins = (librosa.note_to_midi(highest_note) - 
-                 int(librosa.note_to_midi(lowest_note))*bins_per_note)
+        nbins = int((librosa.note_to_midi(highest_note) - 
+                 librosa.note_to_midi(lowest_note))*bins_per_tone)
         C = librosa.cqt(self.wf,sr=self.sr,fmin=librosa.note_to_hz(lowest_note),
-                        n_bins=nbins,bins_per_octave=int(12*bins_per_note),
+                        n_bins=nbins,bins_per_octave=int(12*bins_per_tone),
                         filter_scale=2,hop_length = self.hl)
         
         if magnitude_only:

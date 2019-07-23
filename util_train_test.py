@@ -21,7 +21,8 @@ class Hyperparams:
                  checkpoint_dir ='./data/checkpoints',
                  checkpoint_frequency = 200,
                  note_save_freq=0,
-                 autoload = False):
+                 autoload = False,
+                 use_precise_note_count = True):
         self.N = N
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
@@ -29,8 +30,8 @@ class Hyperparams:
         
         self.timing_frames = int(self.window_size_note_time * self.sr/self.H)
         self.timing_bands = 40 * bins_per_tone
-        self.kernel_size_timing = [(2, 16)]
-        self.pool_size_timing = [(2, 8)]
+        self.kernel_size_timing = [(2*bins_per_tone, 16)]
+        self.pool_size_timing = [(2*bins_per_tone, 8)]
         
         self.pitch_frames = 8
         self.pitch_bands = 87
@@ -43,8 +44,8 @@ class Hyperparams:
         self.instrument_bins_per_tone = bins_per_tone
         self.instrument_bands = self.instrument_bins_per_tone*self.pitch_bands
         self.instrument_classes = 112
-        self.kernel_size_instrument = [(4, 2)]
-        self.pool_size_instrument = [(12, 2)]
+        self.kernel_size_instrument = [(4*bins_per_tone, 2)]
+        self.pool_size_instrument = [(6*bins_per_tone, 2)]
         
         self.batch_size = batch_size = batch_size
 
@@ -64,6 +65,8 @@ class Hyperparams:
         self.note_save_freq = note_save_freq
 
         self.autoload = autoload
+        
+        self.use_precise_note_count = use_precise_note_count
 
 def relevant_notes(sequence, offset, duration):
     notes_w, notes_target = sequence.get_notes(offset, offset + duration,
@@ -77,14 +80,74 @@ def relevant_notes(sequence, offset, duration):
     notes_w.shift(-offset + minus)
     return notes_target, notes_w
 
-def check_shape():
-    pass
+def check_shape(spec,bands,frames):
+    """ Checks if the spectrogram has the correct shape.
+    params:
+        spec: spectrogram or other 2D input
+        bands: shape along 0th dimension
+        frames: shape along 1st dimension
+    returns:
+        throws an exception if evaluation fails
+    """
+    if isinstance(spec,list) or isinstance(spec,tuple):
+        if isinstance(spec[0],list) or isinstance(spec[0],tuple):
+            spec_shape = spec[0][0].shape
+        else:
+            spec_shape = spec[0].shape
+    else:
+        spec_shape = spec.shape
+    if spec_shape != (bands,frames):
+        raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
+                 format((bands,
+                         frames),spec_shape))
+        
+def list_to_nd_array(spec,label):
+    """ Converts a list to the NN good input. Returns the NN matrix or list of 
+    matrices and the matrix witht the labels"""
+    if isinstance(spec,list) or isinstance(spec,tuple):
+        if isinstance(spec[0],list) or isinstance(spec[0],tuple):
+            cb_xa = [np.zeros([0]+list(spec[0][0].shape)+[1]) for _ in range(len(spec[0]))]
+            cb_y=np.zeros([0,1])
+            
+            for sp,label in zip(spec,label):
+                expanded_y = np.expand_dims([label],axis=0)
+                cb_y=np.concatenate((cb_y,expanded_y))
+                for ind,chan in enumerate(sp):
+                    expanded_x = chan[np.newaxis,:,:,np.newaxis]
+                    cb_xa[ind]=np.concatenate((cb_xa[ind],expanded_x))
+                    
+            expanded = cb_xa
+            gold_expanded = cb_y
+        else:
+            cb_x=np.zeros([0]+list(spec[0].shape)+[1])
+            cb_y=np.zeros([0,1])
+            for specs,label in zip(spec,label):
+                expanded_x = specs[np.newaxis,:,:,np.newaxis]
+                expanded_y = np.expand_dims([label],axis=0)
+                cb_x=np.concatenate((cb_x,expanded_x))
+                cb_y=np.concatenate((cb_y,expanded_y))
+                
+            expanded = cb_x
+            gold_expanded = cb_y
+    else:
+        expanded = spec[np.newaxis,:,:,np.newaxis]
+        gold_expanded = np.expand_dims(label,axis=0)
+        
+    return expanded, gold_expanded
 
-def list_to_nd_array():
-    pass
-
-def valid_note():
-    pass
+def validate_note(note, params):
+    """Returns None if no errors found, otherwise returns a string with the
+    error message. 
+    params:
+        params must include the following fields: instrument_classes,
+        pitch_low, pitch_high"""
+    
+    if note.program>=params.instrument_classes:
+        return 'Program out of range: {}'.format(note.program)
+    elif note.pitch<params.pitch_low or note.pitch>params.pitch_high:
+        return 'Pitch out of range: {}'.note.pitch
+    elif note.is_drum:
+        return 'Note is percussive'
 
 class note_sample:
     def __init__(self,filename, 

@@ -8,7 +8,7 @@ Created on Sun Apr 14 15:30:51 2019
 
 import numpy as np
 from RDCNN import res_net
-
+from util_train_test import check_shape, list_to_nd_array
 
 class pitch_classifier(res_net):
     def __init__(self,params,checkpoint_prefix = 'checkpoint_pitch',
@@ -43,30 +43,10 @@ class pitch_classifier(res_net):
                 the correctness of the result
             test_phase: if set to true, testing is done, otherwise training
         """
-        if isinstance(spec,list):
-            spec_shape = spec[0].shape
-        else:
-            spec_shape = spec.shape
-        if spec_shape != (self.params.pitch_bands,self.params.pitch_frames):
-            raise ValueError('Invalid Input shape. Expected: {} . Got: {}'.
-                             format((self.params.pitch_bands,
-                                     self.params.pitch_frames),spec_shape))
-
-        if isinstance(spec,list):
-            cb_x=np.zeros([0]+list(spec[0].shape)+[1])
-            cb_y=np.zeros([0,1])
-            for specs,label in zip(spec,pitch_gold):
-                expanded_x = specs[np.newaxis,:,:,np.newaxis]
-                expanded_y = np.expand_dims([label],axis=0)
-                cb_x=np.concatenate((cb_x,expanded_x))
-                cb_y=np.concatenate((cb_y,expanded_y))
-                
-            expanded = cb_x
-            gold_expanded = cb_y
-        else:
-            expanded = spec[np.newaxis,:,:,np.newaxis]
-            gold_expanded = np.expand_dims(pitch_gold,axis=0)
-            
+        check_shape(spec,self.params.pitch_bands,self.params.pitch_frames)
+        
+        expanded, gold_expanded = list_to_nd_array(spec,pitch_gold)
+        
         if pitch_gold is None:
             pitch_pred = self.predict(expanded)
         else:

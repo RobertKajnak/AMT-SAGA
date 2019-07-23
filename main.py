@@ -204,6 +204,8 @@ if __name__ == '__main__':
                         note_save_freq = note_save_freq,
                         autoload = autoload)
         args_str = '\n' + '\n'.join('{} = {}'.format(k, v) for k, v in args.items())
+        args_str += '\n---\n'+ '\n'.join('{} = {}'.format(k, v) for k, v in vars(p).items())
+        args_str += '\n---'
         logger.info('All hyperparemeters set, starting training: {}'.format(args_str))
 
         from training import train_parallel
