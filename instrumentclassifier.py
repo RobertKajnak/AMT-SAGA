@@ -6,20 +6,21 @@ Created on Sun Apr 14 15:46:18 2019
 @author: hesiris
 """
 
-import numpy as np
 from RDCNN import res_net
 from util_train_test import check_shape, list_to_nd_array
 
 class InstrumentClassifier(res_net):
     INSTRUMENT = 'instrument'
     INSTRUMENT_FOCUSED = 'instrument_focused'
+    INSTRUMENT_FOCUSED_CONST = 'instrument_focused_const'
     INSTRUMENT_DUAL = 'instrument_dual'
     def __init__(self, params, variant):
         if variant == InstrumentClassifier.INSTRUMENT:
             input_shape = [(params.instrument_bands, params.instrument_frames, 1)]
             kernel_size = params.kernel_size_instrument
             pool_size = params.pool_size_instrument
-        elif variant == InstrumentClassifier.INSTRUMENT_FOCUSED:
+        elif variant == InstrumentClassifier.INSTRUMENT_FOCUSED or \
+        variant == InstrumentClassifier.INSTRUMENT_FOCUSED_CONST:
             input_shape = [(params.instrument_bands, params.instrument_frames, 1)]
             kernel_size = params.kernel_size_instrument
             pool_size = params.pool_size_instrument

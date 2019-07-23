@@ -152,14 +152,15 @@ def validate_note(note, params):
 class note_sample:
     def __init__(self,filename, 
                  C_timing, 
-                 sw_C_pitch, sw_C_inst, sw_C_inst_foc,
+                 sw_C_pitch, sw_C_inst, sw_F_inst_foc,sw_F_inst_foc_const,
                  pitch, instrument,
                  time_start, time_end):
         self.filename = filename
         self.C_timing = C_timing
         self.sw_C_pitch = sw_C_pitch
         self.sw_C_inst = sw_C_inst
-        self.sw_C_inst_foc = sw_C_inst_foc
+        self.sw_F_inst_foc = sw_F_inst_foc
+        self.sw_F_inst_foc_const = sw_F_inst_foc_const
         self.pitch = pitch
         self.instrument = instrument
         self.time_start = time_start

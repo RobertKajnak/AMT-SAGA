@@ -6,7 +6,6 @@ Created on Sun Apr 14 15:30:51 2019
 @author: hesiris
 """
 
-import numpy as np
 from RDCNN import res_net
 from util_train_test import check_shape, list_to_nd_array
 

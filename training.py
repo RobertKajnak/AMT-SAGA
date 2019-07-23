@@ -76,6 +76,11 @@ def gen_model(model_name,params):
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED)
+    if model_name == 'instrument_focused_const':
+        logger.info('Loading Focused Instrument Classifier with fixed window '
+                    'position')
+        model = InstrumentClassifier(
+                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED_CONST)
     if model_name == 'instrument_dual':
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
@@ -226,7 +231,7 @@ def thread_sample_aquisition(filename,params):
     frametime = params.H / params.sr
     halfwindow_frames = int(params.timing_frames/2)
     halfwindow_time = int(params.window_size_note_time/2)
-
+    
     offset = 0
     
     total_note_estimation = len(mid.sequence.notes) #TODO improve by accounting for filters
@@ -248,6 +253,10 @@ def thread_sample_aquisition(filename,params):
         audio_w = mid_wf.section(offset, None, params.timing_frames)
         notes_target, _ = relevant_notes(mid, offset, 
                                                params.window_size_note_time)
+        
+        #these constant needed the audio_complete object to calculate
+        fft_bin_min_const = mid_wf.midi_tone_to_FFT(60) #C4, kinda in the middle
+        fft_bin_max_const = fft_bin_min_const + params.instrument_bands
     except Exception as ex:
         logger.detailed('Could not process file {} with error {}. Skipping...'.
               format(fn,ex))
@@ -299,9 +308,11 @@ def thread_sample_aquisition(filename,params):
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
                                         bins_per_tone=params.instrument_bins_per_tone)
+            sw_F_inst_foc_const = audio_sw.section_power('mag',
+                                                  fft_bin_min_const,fft_bin_max_const)
             fft_bin_min = audio_w.midi_tone_to_FFT(note_gold.pitch)
             fft_bin_max = fft_bin_min + params.instrument_bands
-            C_sw_inst_foc = audio_sw.section_power('mag',
+            F_sw_inst_foc = audio_sw.section_power('mag',
                                                   fft_bin_min,fft_bin_max)#TODO this only works for train and test
         except:
             logger.exception('Faulty note in midi {}. Skipping file'.format(fn))
@@ -309,7 +320,8 @@ def thread_sample_aquisition(filename,params):
 
         sample = note_sample(fn,
                              C_timing,
-                             C_sw_pitch, C_sw_inst, C_sw_inst_foc, 
+                             C_sw_pitch, C_sw_inst, F_sw_inst_foc, 
+                             sw_F_inst_foc_const, 
                              pitch_gold, instrument_gold,
                              onset_gold, onset_gold + duration_gold)
                 
@@ -375,7 +387,9 @@ def thread_training(samples_q, params,training_state,
     
     model_names = [#'timing_start', 'timing_end',
 #                    'pitch', 'instrument',
-                    'instrument_focused', 'instrument_dual'
+                    'instrument_focused', 'instrument_focused_const'
+#                    'instrument_dual'
+                    #TODO: the C version of the above three, rename these to _lin
                     ]
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
@@ -409,12 +423,14 @@ def thread_training(samples_q, params,training_state,
 #                                 sample.C_timing,
 #                                 sample.sw_C_pitch,
 #                                 sample.sw_C_inst,
-                                  sample.sw_C_inst_foc,
-                                 [sample.sw_C_inst,sample.sw_C_inst_foc]))
+                                  sample.sw_F_inst_foc,
+                                  sample.sw_F_inst_foc_const,
+                                 [sample.sw_C_inst,sample.sw_F_inst_foc]))
                 sample_y.append((
 #                                 sample.time_start,
 #                                 sample.time_end,
                                  sample.pitch,
+                                 sample.instrument,
                                  sample.instrument,
                                  sample.instrument,
                                  sample.instrument))
