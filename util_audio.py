@@ -424,7 +424,7 @@ class audio_complete:
         return self._resize(C[:,s:t],target_frame_count)
     
     @staticmethod
-    def compress_bands(spectrum, bands=80):
+    def compress_bands(spectrum, bands=80, log=True):
         """ Compresses the frequency bands by averaging neighbouring bands.
         Naive approach. Will cause artefacts. Use with caution
         params:
@@ -434,11 +434,25 @@ class audio_complete:
                 #the last will be summed with the previous ones.
                 #Example: [1,2,3,4,5] -> 2 -> [1+2],[3+4+5]
         """
+        
         ns = np.zeros((bands,spectrum.shape[1]))
-        r = spectrum.shape[0] // bands
-        for i in range(bands):
+        
+        if log:
+            ind = np.geomspace(1,spectrum.shape[0],bands+1,dtype=np.int)
+            ind[0] = 0
+            for i in range(1,bands):
+                if ind[i]-ind[i+1]<1:
+                    for j in range(i+1,bands):
+                        ind[j]+=1
+                        
             for j in range(spectrum.shape[1]):
-                ns[i,j] = np.mean(spectrum[r*i:r*(i+1),j]) 
+                for i in range(bands):
+                    ns[i,j] = np.mean(spectrum[int(ind[i]):int(ind[i+1]),j])
+        else:
+            r = spectrum.shape[0] // bands
+            for i in range(bands):
+                for j in range(spectrum.shape[1]):
+                    ns[i,j] = np.mean(spectrum[r*i:r*(i+1),j]) 
         return ns
         
     

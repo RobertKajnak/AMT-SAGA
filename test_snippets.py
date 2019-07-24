@@ -1051,30 +1051,49 @@ ns.add_note(0,0,'C3',start=0.5,end=1.5)
 wf = ns.render()
 ac = util_audio.audio_complete(wf,buckets)
 
+#%% Real-world file load
+
+buckets = 4096
+path = '/home/hesiris/Documents/Thesis/AMT-SAGA/output/subtraction_demo/'
+filename = 'Listen!!_7800_full_window.flac'
+wf,sr = librosa.load(path+filename,sr=None,mono=False,
+                                            duration=3.5,offset=1.2)
+ac = util_audio.audio_complete(wf,buckets)
 
 
 #%% Using Librosa 
 sr=44100
-bins_per_note = 1
-ac_short = ac.resize(attribs=['F','mag','ph'],start=0.5,duration=1,target_frame_count=40)
-C = ac.slice_C(start=0.5,duration=1,target_frame_count=40,
-               bins_per_note = bins_per_note,filter_scale=2)
+bins_per_tone = 1
+#ac_short = ac.resize(attribs=['F','mag','ph'],start=0.5,duration=1,target_frame_count=40)
+C = ac.slice_C(start=0,duration=4,target_frame_count=150,
+               bins_per_tone = bins_per_tone,filter_scale=2)
 ac.plot_spec()
-ac_short.plot_spec()
+#ac_short.plot_spec()
 
 plt.figure(figsize=(10, 5))
 librosa.display.specshow(librosa.amplitude_to_db(np.abs(C), ref=np.max),
-                          sr=ac_short.sr, hop_length=ac_short.hl,
+                          sr=ac.sr, hop_length=ac.hl,
                           x_axis='time', y_axis='cqt_note',
                           fmin=librosa.note_to_hz('A1'))
 plt.colorbar(format='%+2.0f dB')
 plt.title('Constant-Q power spectrum')
 plt.tight_layout()
 
+cc = audio_complete.compress_bands(ac.mag,bands=40)
+plt.figure(figsize=(10, 5))
+librosa.display.specshow(librosa.amplitude_to_db(np.abs(cc), ref=np.max),
+                          sr=ac.sr, hop_length=ac.hl,
+                          x_axis='time', y_axis='cqt_note',
+                          fmin=librosa.note_to_hz('A1'))
+plt.colorbar(format='%+2.0f dB')
+plt.title('Constant-Q power spectrum')
+plt.tight_layout()
+
+
 #plt.figure()
-#nbins = (librosa.note_to_midi('C8') - librosa.note_to_midi('A1'))*bins_per_note
+#nbins = (librosa.note_to_midi('C8') - librosa.note_to_midi('A1'))*bins_per_tone
 #Q = librosa.cqt(ac.wf,sr=sr,fmin=librosa.note_to_hz('A1'),n_bins=nbins,
-#                bins_per_octave=12*bins_per_note,
+#                bins_per_octave=12*bins_per_tone,
 #            filter_scale=2, sparsity=0.01)
 #print(Q.shape)
 #librosa.display.specshow(librosa.amplitude_to_db(np.abs(Q[:,43:130]), ref=np.max),
@@ -1085,6 +1104,7 @@ plt.tight_layout()
 #plt.tight_layout()
 
 #%% Compression test
+
 r = 2
 Cc = audio_complete.compress_bands(C,r)
 print(C.shape,Cc.shape)
@@ -1117,15 +1137,15 @@ ac = audio_complete(mid.render(sf2_path = sf_path), N)
 #ac.save(os.path.join(output_path,'full.flac'))
 
 #%%
-bins_per_note = 1
+bins_per_tone = 1
 filter_scale=2
 highest_note = 'C8'
 lowest_note='A0'
 nbins = (librosa.note_to_midi(highest_note) - 
-                 librosa.note_to_midi(lowest_note))*bins_per_note
+                 librosa.note_to_midi(lowest_note))*bins_per_tone
 fmin=librosa.note_to_hz(lowest_note)
 fmax=librosa.note_to_hz(highest_note)
-bins_per_octave=12*bins_per_note
+bins_per_octave=12*bins_per_tone
 filter_scale=2
 
 params = {

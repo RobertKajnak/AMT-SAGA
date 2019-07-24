@@ -386,8 +386,9 @@ def thread_training(samples_q, params,training_state,
         training_lock = None
     
     model_names = [#'timing_start', 'timing_end',
-#                    'pitch', 'instrument',
-                    'instrument_focused', 'instrument_focused_const'
+                    'pitch'
+#                    'instrument',
+#                    'instrument_focused', 'instrument_focused_const'
 #                    'instrument_dual'
                     #TODO: the C version of the above three, rename these to _lin
                     ]
@@ -421,19 +422,21 @@ def thread_training(samples_q, params,training_state,
                 sample_x.append((
 #                                 sample.C_timing,
 #                                 sample.C_timing,
-#                                 sample.sw_C_pitch,
+                                 sample.sw_C_pitch,
 #                                 sample.sw_C_inst,
-                                  sample.sw_F_inst_foc,
-                                  sample.sw_F_inst_foc_const,
-                                 [sample.sw_C_inst,sample.sw_F_inst_foc]))
+#                                  sample.sw_F_inst_foc,
+#                                  sample.sw_F_inst_foc_const,
+#                                 [sample.sw_C_inst,sample.sw_F_inst_foc]
+                                 ))
                 sample_y.append((
 #                                 sample.time_start,
 #                                 sample.time_end,
                                  sample.pitch,
-                                 sample.instrument,
-                                 sample.instrument,
-                                 sample.instrument,
-                                 sample.instrument))
+#                                 sample.instrument,
+#                                 sample.instrument,
+#                                 sample.instrument,
+#                                 sample.instrument
+                                 ))
                 i+=1
             except Exception:
                 logger.exception('Unexpected error while sending samples.'
