@@ -31,24 +31,29 @@ class Hyperparams:
         
         self.models_to_train = models_to_train
         
+        self.convolutional_layer_count = 33
+        self.pool_layer_frequency = 12
+        self.feature_expand_frequency = 12  
+        self.residual_layer_frequencies = [2]
+        
         self.timing_frames = int(self.window_size_note_time * self.sr/self.H)
-        self.timing_bands = 40 * bins_per_tone
-        self.kernel_size_timing = [(2*bins_per_tone, 16)]
-        self.pool_size_timing = [(2*bins_per_tone, 8)]
+        self.timing_bands = max(40,20 * bins_per_tone//2)
+        self.kernel_size_timing = [(4, 16)]
+        self.pool_size_timing = [(int(2*max(1,np.log2(bins_per_tone//2))), 8)]
         
         self.pitch_frames = 8
         self.pitch_bands = 87
         self.pitch_low = 21
         self.pitch_high = 108
-        self.kernel_size_pitch = [(6, 2)]
-        self.pool_size_pitch = [(6, 2)]
+        self.kernel_size_pitch = [(4, 2)]
+        self.pool_size_pitch = [(4, 2)]
         
         self.instrument_frames = self.pitch_frames
         self.instrument_bins_per_tone = bins_per_tone
         self.instrument_bands = self.instrument_bins_per_tone*self.pitch_bands
         self.instrument_classes = 112
-        self.kernel_size_instrument = [(4*bins_per_tone, 2)]
-        self.pool_size_instrument = [(6*bins_per_tone, 2)]
+        self.kernel_size_instrument = [(4,2)]
+        self.pool_size_instrument = [(int(4*max(1,np.log2(bins_per_tone))), 2)]
         
         self.velocity_min = 5
         self.velocity_max = 125
@@ -57,10 +62,6 @@ class Hyperparams:
 
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_frequency = checkpoint_frequency
-        self.convolutional_layer_count = 33
-        self.pool_layer_frequency = 12
-        self.feature_expand_frequency = 12  # pool_layer_frequency
-        self.residual_layer_frequencies = [2]
 
         self.parallel_train = parallel_train
         self.synth_worker_count = synth_worker_count
@@ -150,7 +151,7 @@ def validate_note(note, params):
     if note.program>=params.instrument_classes:
         return 'Program out of range: {}'.format(note.program)
     elif note.pitch<params.pitch_low or note.pitch>params.pitch_high:
-        return 'Pitch out of range: {}'.note.pitch
+        return 'Pitch out of range: {}'.format(note.pitch)
     elif note.is_drum:
         return 'Note is percussive'
 

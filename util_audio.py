@@ -446,10 +446,10 @@ class audio_complete:
         if log:
             ind = np.geomspace(1,spectrum.shape[0],bands+1,dtype=np.int)
             ind[0] = 0
-            for i in range(1,bands):
-                if ind[i]-ind[i+1]<1:
-                    for j in range(i+1,bands):
-                        ind[j]+=1
+            for i in range(0,bands):
+                sub = ind[i+1]-ind[i]
+                if sub<1:
+                    ind[i+1] += -sub + 1
                         
             for j in range(spectrum.shape[1]):
                 for i in range(bands):

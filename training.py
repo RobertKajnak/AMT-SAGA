@@ -13,7 +13,7 @@ from queue import Empty as EmptyException
 from queue import Full as FullException
 import logging
 from functools import wraps
-
+import warnings
 from librosa import midi_to_note
 
 try:
@@ -227,6 +227,7 @@ def init_sample_aquisition(samples_q,note_i,training_state):
     
 @logged_thread
 def thread_sample_aquisition(filename,params):
+#    warnings.filterwarnings("error")
     logger = logging.getLogger('AMT-SAGA.sample_gen')
     fn = filename
     try:
@@ -275,7 +276,9 @@ def thread_sample_aquisition(filename,params):
         if note_gold is not None:
             note_problem = validate_note(note_gold,params)
             if note_problem:
-                logging.debug(note_problem)
+                logger.debug(note_problem)
+                continue
+            
             logger.debug('Offset/Note start/end time = {:.3f} / {:.3f} / {:.3f}'.
                   format(offset, note_gold.start_time,note_gold.end_time))
         
@@ -303,7 +306,7 @@ def thread_sample_aquisition(filename,params):
 #            C_timing = audio_w.slice_C(0,params.window_size_note_time,
 #                                       params.timing_frames,
 #                                       bins_per_note=1)
-            
+                
             C_timing = audio_complete.compress_bands(audio_w.mag,
                                         bands = params.timing_bands)#TODO temp
             C_timing = audio_complete._resize(C_timing,params.timing_frames)
@@ -412,7 +415,8 @@ def thread_training(samples_q, params,training_state,
     all_model_names = ['timing_start', 'timing_end',
                     'pitch',
                     'instrument',
-                    'instrument_focused_lin', 'instrument_focused_const_lin',
+                    'instrument_focused_lin', 
+                    'instrument_focused_const_lin',
                     'instrument_dual_lin',
                     'instrument_focused', 'instrument_focused_const',
                     'instrument_dual',

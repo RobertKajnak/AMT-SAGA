@@ -38,22 +38,22 @@ if __name__ == '__main__':
     
     #Model parameters
     parser.add_argument('-models',
-                        default=[1,2,3,4,5],
+                        default=[0,1,2,3,4,5,6,7,8,9,10],
                         nargs='+',
                         type=int,
                         help = 'The models to be trained. Input for not used'
                         'models may still be generated. Possible models: '
-                        '0=timing_start '
-                        '1=timing_end '
-                        '2=pitch '
-                        '3=instrument_lin '
-                        '4=instrument_focused_lin '
-                        '5=instrument_focused_const_lin '
-                        '6=instrument '
-                        '7=instrument_focused '
-                        '8=instrument_focused_const '
-                        '9=instrument_dual '
-                        '10=velocity'
+                        '0= Start time detector '
+                        '1= End time detector '
+                        '2= Pitch detector '
+                        '3= CQT Insrument Classifier '
+                        '4= FFT Instrument Classifier w/ adaptive swindow '
+                        '5= FFT Instrument Classifier w/ constant swindow '
+                        '6= CQT+FFT Instrument Classifier '
+                        '7= CQT Instrument Classifier w/ adaptive swindow '
+                        '8= CQT Instrument Classifier w/ constant swindow '
+                        '9= CQT+CQT Instrument Classifier '
+                        '10= Velocity detector '
                         'Example:to use the timing models and the dual '
                         'instrument detector: -models 0 1 9'
                         )
@@ -95,12 +95,12 @@ if __name__ == '__main__':
                         'be loaded from the checkpoint directory '
                         '(output/checkpoints)')
     parser.add_argument('-checkpoint_freq',
-                        default = 200,
+                        default = 500,
                         type = int,
                         help = 'The freqency at which the model weights will '
                         'be saved. Measured in batches')
     parser.add_argument('-note_save_freq',
-                        default = 500,
+                        default = 2000,
                         type = int,
                         help = 'The frequency at which the currently generated'
                         ' and subtracted notes will be displayed. This can be '
