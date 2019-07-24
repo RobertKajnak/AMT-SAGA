@@ -37,7 +37,7 @@ class Hyperparams:
         self.residual_layer_frequencies = [2]
         
         self.timing_frames = int(self.window_size_note_time * self.sr/self.H)
-        self.timing_bands = max(40,20 * bins_per_tone//2)
+        self.timing_bands = max(20,20 * bins_per_tone//6)
         self.kernel_size_timing = [(4, 16)]
         self.pool_size_timing = [(int(2*max(1,np.log2(bins_per_tone//2))), 8)]
         
