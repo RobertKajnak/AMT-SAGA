@@ -395,7 +395,7 @@ def thread_training(samples_q, params,training_state,
     all_model_names = ['timing_start', 'timing_end',
                     'pitch',
                     'instrument',
-                    'instrument_focused', 'instrument_focused_const'
+                    'instrument_focused', 'instrument_focused_const',
                     'instrument_dual',
                     'velocity']
 #                    TODO: the C version of the above three, rename these to _lin
