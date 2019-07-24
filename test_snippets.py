@@ -476,11 +476,11 @@ buckets = 4096
 #Generate notes
 ns = nsequence(sf2_path = sf_path)
 inst = 0
-ns.add_note(0,inst,'G3',start=0,end=2)
-ns.add_note(0,inst,'b',start=0,end=2)
-ns.add_note(0,inst,'D4',start=0,end=2)
+ns.add_note(0,inst,'G3',start=0,end=2,velocity=60)
+ns.add_note(0,inst,'b',start=0,end=2,velocity=60)
+ns.add_note(0,inst,'D4',start=0,end=2,velocity=60)
 
-ns.add_note(0,inst,'C5',start=0.5,end=1.5)
+ns.add_note(0,inst,'C2',start=0.5,end=1.5,velocity=60)
 
 #Generate wave and spectral representations
 wf = ns.render()
@@ -488,8 +488,9 @@ ac = util_audio.audio_complete(wf,buckets)
 
 #same for the C only
 guess = nsequence()
-guess.add_note(0,inst,'C5',0,1)
-ac_guess = util_audio.audio_complete(guess.render(),buckets)
+guess.add_note(0,inst,'C2',0,1,velocity=105)
+wf_guess = guess.render()
+ac_guess = util_audio.audio_complete(wf_guess,buckets)
 
 #Subtract. Create a copy to plot later
 ac_sub = ac.clone()
@@ -500,7 +501,7 @@ util_audio.plot_specs([ac_guess,ac,ac_sub])
 
 #Save both midi and wav
 path = './output/subtraction_demo/'
-filename = 'piano_pitch_-1_off'
+filename = 'piano_velocity_double'
 ac_guess.save(os.path.join(path, filename + '_test_guess.flac'))
 ac.save(os.path.join(path,filename + '_test.flac'))
 ac_sub.save(os.path.join(path,filename + '_test_sub.flac'))

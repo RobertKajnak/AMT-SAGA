@@ -14,6 +14,8 @@ from queue import Full as FullException
 import logging
 from functools import wraps
 
+from librosa import midi_to_note
+
 try:
     from pynput.keyboard import KeyCode, Key, Listener
     X_AVAILABLE = True
@@ -73,16 +75,16 @@ def gen_model(model_name,params):
         logger.info('Loading Instrument Classifier')
         model = InstrumentClassifier(params, 
                                      variant=InstrumentClassifier.INSTRUMENT)
-    if model_name == 'instrument_focused':
+    if model_name == 'instrument_focused' or model_name == 'instrument_focused_lin':
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED)
-    if model_name == 'instrument_focused_const':
+    if model_name == 'instrument_focused_const' or model_name == 'instrument_focused_const_lin':
         logger.info('Loading Focused Instrument Classifier with fixed window '
                     'position')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED_CONST)
-    if model_name == 'instrument_dual':
+    if model_name == 'instrument_dual' or model_name == 'instrument_dual_lin':
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
@@ -314,20 +316,35 @@ def thread_sample_aquisition(filename,params):
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
                                         bins_per_tone=params.instrument_bins_per_tone)
-            sw_F_inst_foc_const = audio_sw.section_power('mag',
+            F_sw_inst_foc_const = audio_sw.section_power('mag',
                                                   fft_bin_min_const,fft_bin_max_const)
-            fft_bin_min = audio_w.midi_tone_to_FFT(note_gold.pitch)
+            fft_bin_min = audio_w.midi_tone_to_FFT(pitch_gold)
             fft_bin_max = fft_bin_min + params.instrument_bands
             F_sw_inst_foc = audio_sw.section_power('mag',
                                                   fft_bin_min,fft_bin_max)#TODO this only works for train and test
+            C_sw_inst_foc = audio_w.slice_C(onset_gold, duration_gold,
+                                        params.instrument_frames,
+                                        bins_per_tone=params.instrument_bins_per_tone*4,
+                                        highest_note = None,
+                                        nbins = params.instrument_bands,
+                                        lowest_note= midi_to_note(pitch_gold))
+            
+            C_sw_inst_foc_const = audio_w.slice_C(onset_gold, duration_gold,
+                                        params.instrument_frames,
+                                        bins_per_tone=params.instrument_bins_per_tone*4,
+                                        highest_note = None, 
+                                        nbins = params.instrument_bands,
+                                        lowest_note= midi_to_note(60)
+                                        )
         except:
             logger.exception('Faulty note in midi {}. Skipping file'.format(fn))
             return
 
         sample = note_sample(fn,
                              C_timing,
-                             C_sw_pitch, C_sw_inst, F_sw_inst_foc, 
-                             sw_F_inst_foc_const, 
+                             C_sw_pitch, C_sw_inst, 
+                             F_sw_inst_foc, F_sw_inst_foc_const, 
+                             C_sw_inst_foc, C_sw_inst_foc_const,
                              pitch_gold, instrument_gold,
                              onset_gold, onset_gold + duration_gold,
                              velocity_gold)
@@ -395,10 +412,12 @@ def thread_training(samples_q, params,training_state,
     all_model_names = ['timing_start', 'timing_end',
                     'pitch',
                     'instrument',
+                    'instrument_focused_lin', 'instrument_focused_const_lin',
+                    'instrument_dual_lin',
                     'instrument_focused', 'instrument_focused_const',
                     'instrument_dual',
                     'velocity']
-#                    TODO: the C version of the above three, rename these to _lin
+    
     #Selects the models to use from the possiblities
     model_names = [all_model_names[i] for i in params.models_to_train]
     
@@ -431,15 +450,21 @@ def thread_training(samples_q, params,training_state,
             try:
                 all_x = (sample.C_timing,
                          sample.C_timing,
-                         sample.sw_C_pitch,
-                         sample.sw_C_inst,
-                         sample.sw_F_inst_foc,
-                         sample.sw_F_inst_foc_const,
-                         [sample.sw_C_inst,sample.sw_F_inst_foc],
-                         sample.sw_C_inst)
+                         sample.C_sw_pitch,
+                         sample.C_sw_inst,
+                         sample.F_sw_inst_foc,
+                         sample.F_sw_inst_foc_const,
+                         [sample.C_sw_inst,sample.F_sw_inst_foc],
+                         sample.C_sw_inst_foc,
+                         sample.C_sw_inst_foc_const,
+                         [sample.C_sw_inst,sample.C_sw_inst_foc],
+                         sample.C_sw_inst)
                 all_y = (sample.time_start,
                          sample.time_end,
                          sample.pitch,
+                         sample.instrument,
+                         sample.instrument,
+                         sample.instrument,
                          sample.instrument,
                          sample.instrument,
                          sample.instrument,

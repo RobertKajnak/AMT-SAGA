@@ -46,13 +46,16 @@ if __name__ == '__main__':
                         '0=timing_start '
                         '1=timing_end '
                         '2=pitch '
-                        '3=instrument '
-                        '4=instrument_focused '
-                        '5=instrument_focused_const '
-                        '6=instrument_dual '
-                        '7=velocity'
+                        '3=instrument_lin '
+                        '4=instrument_focused_lin '
+                        '5=instrument_focused_const_lin '
+                        '6=instrument '
+                        '7=instrument_focused '
+                        '8=instrument_focused_const '
+                        '9=instrument_dual '
+                        '10=velocity'
                         'Example:to use the timing models and the dual '
-                        'instrument detector: -models 0 1 6'
+                        'instrument detector: -models 0 1 9'
                         )
     parser.add_argument('-bins_per_semitone',
                         default=4,

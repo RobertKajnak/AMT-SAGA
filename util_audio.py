@@ -407,10 +407,16 @@ class audio_complete:
     def slice_C(self,start,duration,target_frame_count,
                 magnitude_only = True,
                 bins_per_tone = 1,filter_scale=2,
-                highest_note = 'C8', lowest_note='A0'):
+                highest_note = 'C8', lowest_note='A0',nbins=None):
+        """
+        Calculates the CQT and slices a part of it. 
+        If nbins is specified, the highest note is ignored
+        """
         
-        nbins = int((librosa.note_to_midi(highest_note) - 
-                 librosa.note_to_midi(lowest_note))*bins_per_tone)
+        if nbins is None:
+            nbins = int((librosa.note_to_midi(highest_note) - 
+                     librosa.note_to_midi(lowest_note))*bins_per_tone)
+            
         C = librosa.cqt(self.wf,sr=self.sr,fmin=librosa.note_to_hz(lowest_note),
                         n_bins=nbins,bins_per_octave=int(12*bins_per_tone),
                         filter_scale=2,hop_length = self.hl)
@@ -879,7 +885,7 @@ class note_sequence:
 
         return synthesized
     
-    def _fluidsynth_midi_stateful(self, midi_object, fs=44100):
+    def _fluidsynth_midi_stateful(self, midi_object, fs=44100,normalize= True):
         """Taken from github.com/craffel/pretty-midi/ 
         The key change is that sf2_path can now be a loaded file, 
         thus reducing disk load. Default file load removed.
@@ -912,7 +918,8 @@ class note_sequence:
         for waveform in waveforms:
             synthesized[:waveform.shape[0]] += waveform
         # Normalize
-        synthesized /= np.abs(synthesized).max()
+        if normalize:
+            synthesized /= np.abs(synthesized).max()
         return synthesized
         
 def plot_specs(spec_list,sr=44100,width =12,height_per_plot=5):
