@@ -37,6 +37,22 @@ if __name__ == '__main__':
                         'graphs, metrics etc.')
     
     #Model parameters
+    parser.add_argument('-models',
+                        default=[1,2,3,4,5],
+                        nargs='+',
+                        type=int,
+                        help = 'The models to be trained. Input for not used'
+                        'models may still be generated. Possible models: '
+                        '0=timing_start '
+                        '1=timing_end '
+                        '2=pitch '
+                        '3=instrument '
+                        '4=instrument_focused '
+                        '5=instrument_focused_const '
+                        '6=instrument_dual '
+                        'Example:to use the timing models and the dual '
+                        'instrument detector: -models 0 1 6'
+                        )
     parser.add_argument('-bins_per_semitone',
                         default=4,
                         type=int,
@@ -112,6 +128,7 @@ if __name__ == '__main__':
     path_data = args['data_path']
     path_output = args['output_path']
     path_sf = args['soundfont_path']
+    models = args['models']
     bins_per_tone = args['bins_per_semitone']
     synth_workers = args['synth_workers']
     par_train = args['partrain']
@@ -191,6 +208,7 @@ if __name__ == '__main__':
     try:            
         p = Hyperparams(path_data, path_sf, path_output = path_output,
                         
+                        models_to_train = models,
                         bins_per_tone = bins_per_tone,
                         
                         batch_size = batch_size,

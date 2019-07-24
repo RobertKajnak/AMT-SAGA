@@ -15,6 +15,7 @@ PATH_CHECKPOINTS = 'checkpoints'
 class Hyperparams:
     def __init__(self, path_data, sf_path, path_output='.', 
                  N=4096, sr=44100, H=None, window_size_note_time=None,
+                 models_to_train = [0,1,2,3,4,5,6],
                  bins_per_tone = 4,
                  batch_size = 8, synth_worker_count =1,
                  parallel_train=False,
@@ -27,6 +28,8 @@ class Hyperparams:
         self.sr = sr
         self.H = np.int(N / 4) if H is None else H
         self.window_size_note_time = 6 if window_size_note_time is None else window_size_note_time
+        
+        self.models_to_train = models_to_train
         
         self.timing_frames = int(self.window_size_note_time * self.sr/self.H)
         self.timing_bands = 40 * bins_per_tone

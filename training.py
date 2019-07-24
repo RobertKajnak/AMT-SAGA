@@ -385,13 +385,15 @@ def thread_training(samples_q, params,training_state,
     else:
         training_lock = None
     
-    model_names = [#'timing_start', 'timing_end',
-                    'pitch'
-#                    'instrument',
-#                    'instrument_focused', 'instrument_focused_const'
-#                    'instrument_dual'
-                    #TODO: the C version of the above three, rename these to _lin
-                    ]
+    all_model_names = ['timing_start', 'timing_end',
+                    'pitch',
+                    'instrument',
+                    'instrument_focused', 'instrument_focused_const'
+                    'instrument_dual']
+#                    TODO: the C version of the above three, rename these to _lin
+    #Selects the models to use from the possiblities
+    model_names = [all_model_names[i] for i in params.models_to_train]
+    
     qs = [Queue(1) for _ in model_names]
     model_processes = [Process(target=thread_classification, 
                             args=(model_name,params, q,
@@ -419,24 +421,26 @@ def thread_training(samples_q, params,training_state,
                                  'attempting to continue')
                 continue
             try:
-                sample_x.append((
-#                                 sample.C_timing,
-#                                 sample.C_timing,
-                                 sample.sw_C_pitch,
-#                                 sample.sw_C_inst,
-#                                  sample.sw_F_inst_foc,
-#                                  sample.sw_F_inst_foc_const,
-#                                 [sample.sw_C_inst,sample.sw_F_inst_foc]
-                                 ))
-                sample_y.append((
-#                                 sample.time_start,
-#                                 sample.time_end,
-                                 sample.pitch,
-#                                 sample.instrument,
-#                                 sample.instrument,
-#                                 sample.instrument,
-#                                 sample.instrument
-                                 ))
+                all_x = (sample.C_timing,
+                         sample.C_timing,
+                         sample.sw_C_pitch,
+                         sample.sw_C_inst,
+                         sample.sw_F_inst_foc,
+                         sample.sw_F_inst_foc_const,
+                         [sample.sw_C_inst,sample.sw_F_inst_foc])
+                all_y = (sample.time_start,
+                         sample.time_end,
+                         sample.pitch,
+                         sample.instrument,
+                         sample.instrument,
+                         sample.instrument,
+                         sample.instrument)
+                
+                current_x = [all_x[mi] for mi in params.models_to_train]
+                current_y = [all_y[mi] for mi in params.models_to_train]
+                
+                sample_x.append(current_x)
+                sample_y.append(current_y)
                 i+=1
             except Exception:
                 logger.exception('Unexpected error while sending samples.'
