@@ -42,7 +42,7 @@ class VelocityClassifier(res_net):
                 the correctness of the result
             test_phase: if set to true, testing is done, otherwise training
         """
-        check_shape(spec,self.params.pitch_bands,self.params.pitch_frames)
+        check_shape(spec,self.params.instrument_bands,self.params.instrument_frames)
         
         expanded, gold_expanded = list_to_nd_array(spec,velocity_gold)
         
