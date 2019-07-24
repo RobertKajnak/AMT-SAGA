@@ -23,6 +23,7 @@ except:
 from timing_classifier import timming_classifier as TimingClassifier
 from pitch_classifier import pitch_classifier as PitchClassifier
 from instrumentclassifier import InstrumentClassifier as InstrumentClassifier
+from velocity_classifier import VelocityClassifier as VelocityClassifier
 from util_dataset import DataManager, get_latest_file
 from util_audio import note_sequence
 from util_audio import audio_complete
@@ -85,6 +86,10 @@ def gen_model(model_name,params):
         logger.info('Loading Focused Instrument Classifier')
         model = InstrumentClassifier(
                 params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
+        
+    if model_name == 'velocity':
+        logger.info('Loading Veloicty Classifier')
+        model = VelocityClassifier(params,checkpoint_prefix= checkpoint_prefix)
         
     if params.autoload:
         fn_check = get_latest_file(params.checkpoint_dir, 
@@ -276,6 +281,7 @@ def thread_sample_aquisition(filename,params):
             duration_gold = note_gold.end_time - note_gold.start_time
             pitch_gold = note_gold.pitch
             instrument_gold = note_gold.program
+            velocity_gold = note_gold.velocity
         else:
             onset_gold = offset + halfwindow_time
 
@@ -323,7 +329,8 @@ def thread_sample_aquisition(filename,params):
                              C_sw_pitch, C_sw_inst, F_sw_inst_foc, 
                              sw_F_inst_foc_const, 
                              pitch_gold, instrument_gold,
-                             onset_gold, onset_gold + duration_gold)
+                             onset_gold, onset_gold + duration_gold,
+                             velocity_gold)
                 
         while training_state_g.value>0:
             try:
@@ -389,7 +396,8 @@ def thread_training(samples_q, params,training_state,
                     'pitch',
                     'instrument',
                     'instrument_focused', 'instrument_focused_const'
-                    'instrument_dual']
+                    'instrument_dual',
+                    'velocity']
 #                    TODO: the C version of the above three, rename these to _lin
     #Selects the models to use from the possiblities
     model_names = [all_model_names[i] for i in params.models_to_train]
@@ -427,14 +435,16 @@ def thread_training(samples_q, params,training_state,
                          sample.sw_C_inst,
                          sample.sw_F_inst_foc,
                          sample.sw_F_inst_foc_const,
-                         [sample.sw_C_inst,sample.sw_F_inst_foc])
+                         [sample.sw_C_inst,sample.sw_F_inst_foc],
+                         sample.sw_C_inst)
                 all_y = (sample.time_start,
                          sample.time_end,
                          sample.pitch,
                          sample.instrument,
                          sample.instrument,
                          sample.instrument,
-                         sample.instrument)
+                         sample.instrument,
+                         sample.velocity)
                 
                 current_x = [all_x[mi] for mi in params.models_to_train]
                 current_y = [all_y[mi] for mi in params.models_to_train]

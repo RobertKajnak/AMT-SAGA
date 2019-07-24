@@ -50,8 +50,10 @@ class Hyperparams:
         self.kernel_size_instrument = [(4*bins_per_tone, 2)]
         self.pool_size_instrument = [(6*bins_per_tone, 2)]
         
+        self.velocity_min = 5
+        self.velocity_max = 125
+        
         self.batch_size = batch_size = batch_size
-
 
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_frequency = checkpoint_frequency
@@ -157,7 +159,8 @@ class note_sample:
                  C_timing, 
                  sw_C_pitch, sw_C_inst, sw_F_inst_foc,sw_F_inst_foc_const,
                  pitch, instrument,
-                 time_start, time_end):
+                 time_start, time_end,
+                 velocity):
         self.filename = filename
         self.C_timing = C_timing
         self.sw_C_pitch = sw_C_pitch
@@ -168,3 +171,4 @@ class note_sample:
         self.instrument = instrument
         self.time_start = time_start
         self.time_end = time_end
+        self.velocity = velocity

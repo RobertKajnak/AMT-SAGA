@@ -50,6 +50,7 @@ if __name__ == '__main__':
                         '4=instrument_focused '
                         '5=instrument_focused_const '
                         '6=instrument_dual '
+                        '7=velocity'
                         'Example:to use the timing models and the dual '
                         'instrument detector: -models 0 1 6'
                         )
