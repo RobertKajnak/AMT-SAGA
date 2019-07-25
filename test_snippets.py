@@ -13,6 +13,7 @@ from util_audio import midi_from_file
 import util_audio
 from util_audio import audio_complete
 from tensorflow.keras.utils import Sequence
+import util_train_test
 
 from essentia.standard import (NSGConstantQ, ConstantQ,
     NSGIConstantQ)
@@ -1235,14 +1236,15 @@ ac.save(os.path.join(output_path,'shifted.flac'))
 
 
 #%% Test Instrument distribution over data set
+params = util_train_test.Hyperparams('','')
 path_data = os.path.join('data','lakh_midi')
 
-dm = DataManager(path_data, sets=['training'], types=['midi'])
-dm.set_set('training') 
+dm = DataManager(path_data, sets=['test'], types=['midi'])
+dm.set_set('test') 
 
 data_dist = np.zeros(112)
 valid_filenames=[]
-train_size = len(dm.data['training']['midi'])
+train_size = len(dm.data['test']['midi'])
 pb = PB.ProgressBar(train_size)
 
 i=0
@@ -1262,14 +1264,14 @@ for fn in dm:
     for note in mid.sequence.notes:
 #    note = mid.pop()
 #    while note is not None:
-        if not note.is_drum and note.program<112:
+        if not util_train_test.validate_note(note,params):
             dist_song[note.program] += 1
 #            j+=1
 #            if j>500:
 #                break;
 #        note = mid.pop()
         
-    if i<train_size/300 or \
+    if i<train_size/500 or \
             np.var(data_dist)>=np.var(data_dist+dist_song):
         data_dist+=dist_song
         valid_filenames.append(fn[0])
@@ -1281,7 +1283,7 @@ for fn in valid_filenames:
     except:
         continue
     for note in mid.sequence.notes:
-        if not note.is_drum and note.program<112:
+        if not util_train_test.validate_note(note,params):
             dist_total[note.program] += 1
 mean_total = np.mean(dist_total)
 
@@ -1297,7 +1299,7 @@ for fn in valid_filenames:
         continue
     dist_song = np.zeros(112)
     for note in mid.sequence.notes:
-        if not note.is_drum and note.program<112:
+        if not util_train_test.validate_note(note,params):
             dist_song[note.program] += 1
     
     if (dist_song[0])<np.sum(dist_song)*0.5: #and\
@@ -1309,6 +1311,14 @@ for fn in valid_filenames:
         print(data_dist[40],mean_total)
         print(fn)
         
+total_notes=1
+for fn in even_more_valid_fn:
+    mid = nsequence(fn)
+    for note in mid.sequence.notes:
+        if not util_train_test.validate_note(note,params):
+            total_notes+=1
+print(total_notes)
+        
 fig = plt.figure(figsize = (7,3),dpi=300)
 plt.bar(range(112),data_dist,color='black')
 plt.ylabel('Occurances')
@@ -1319,14 +1329,14 @@ fig.savefig('output/statistics/data_dristribution_placeholder.png')
 with open('output/statistics/valid_files_from_0_paceholder.txt', 'w') as f:
     for fn in even_more_valid_fn:
         f.write("%s\n" % fn)
-        
-#valid_filenames = []
-#with open('output/statistics/valid_files_from_0.txt', 'r') as f:
-#    for fn in f:
-#        valid_filenames.append(fn[:-1])
-#%%
+#%% Actually move the files
+valid_filenames_to_move = []
+with open('output/statistics/valid_files_from_f1.txt', 'r') as f:
+    for fn in f:
+        valid_filenames_to_move.append(fn[:-1])
+
 from shutil import copy2
-for fn in even_more_valid_fn:
-    copy2(fn,'data/lakh_filtered/training/midi/')
+for fn in valid_filenames_to_move:
+    copy2(fn,'data/lakh_filtered/test/midi/')
 
 
