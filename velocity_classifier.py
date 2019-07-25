@@ -12,9 +12,9 @@ from util_train_test import check_shape, list_to_nd_array
 class VelocityClassifier(res_net):
     def __init__(self,params,checkpoint_prefix = 'checkpoint_velocity',
                  metrics_prefix='metrics_velocity'):
-        super().__init__(input_shapes=[(params.instrument_bands, params.instrument_frames, 1)],
-                         kernel_sizes=params.kernel_size_instrument, 
-                         pool_sizes=params.pool_size_instrument,
+        super().__init__(input_shapes=[(params.pitch_bands, params.pitch_frames, 1)],
+                         kernel_sizes=params.kernel_size_pitch, 
+                         pool_sizes=params.pool_size_pitch,
                          output_classes=1,
                          output_range = [params.velocity_min,params.velocity_max],
                          batch_size = params.batch_size,
@@ -42,7 +42,7 @@ class VelocityClassifier(res_net):
                 the correctness of the result
             test_phase: if set to true, testing is done, otherwise training
         """
-        check_shape(spec,self.params.instrument_bands,self.params.instrument_frames)
+        check_shape(spec,self.params.pitch_bands,self.params.pitch_frames)
         
         expanded, gold_expanded = list_to_nd_array(spec,velocity_gold)
         

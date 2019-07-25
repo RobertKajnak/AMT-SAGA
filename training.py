@@ -462,7 +462,7 @@ def thread_training(samples_q, params,training_state,
                          sample.C_sw_inst_foc,
                          sample.C_sw_inst_foc_const,
                          [sample.C_sw_inst,sample.C_sw_inst_foc],
-                         sample.C_sw_inst)
+                         sample.C_sw_pitch)
                 all_y = (sample.time_start,
                          sample.time_end,
                          sample.pitch,
