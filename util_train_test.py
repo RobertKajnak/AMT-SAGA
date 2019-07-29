@@ -155,6 +155,21 @@ def validate_note(note, params):
     elif note.is_drum:
         return 'Note is percussive'
 
+def pm(x):
+    print(x.shape,np.min(x),np.max(x))
+
+def sumrize(x,w=6,h=6):
+    pm(x)
+    s = np.zeros((w,h))
+    a = np.linspace(0,x.shape[0],w+1,dtype=np.int)
+    b = np.linspace(0,x.shape[1],h+1,dtype=np.int)
+    for i in range(0,w):
+        for j in range(0,h):
+            s[i,j] = np.sum(x[a[i]:a[i+1],b[j]:b[j+1]])
+    with np.printoptions(precision=3, suppress=True):
+        print(s)
+    return s
+
 class note_sample:
     def __init__(self,filename, 
                  C_timing, 

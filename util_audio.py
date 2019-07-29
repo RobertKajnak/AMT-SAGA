@@ -424,7 +424,7 @@ class audio_complete:
         if magnitude_only:
             C=np.abs(C)
         
-        t = self._seconds_to_frames(duration)
+        t = self._seconds_to_frames(start+duration)
         s = self._seconds_to_frames(start)     
 
         return self._resize(C[:,s:t],target_frame_count)
@@ -485,7 +485,7 @@ class audio_complete:
         if self._ref_mag is not None:
             nac._ref_mag = self._ref_mag
         
-        t = self._seconds_to_frames(duration)
+        t = self._seconds_to_frames(start+duration)
         s = self._seconds_to_frames(start)        
         #If it is longer, it will take a shorter section starting from s
         for attrib in attribs:

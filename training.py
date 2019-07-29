@@ -15,7 +15,7 @@ import logging
 from functools import wraps
 import warnings
 from librosa import midi_to_note
-
+import numpy as np
 try:
     from pynput.keyboard import KeyCode, Key, Listener
     X_AVAILABLE = True
@@ -167,7 +167,7 @@ def thread_classification(model_name,params,q_samples, training_state,
                 model.classify(sample[0],sample[1],test_phase=True)
             elif training_state.value == 3:
                 model.classify(sample[0],None)
-        except:#TODO: Try
+        except:
             logger.exception('An Error occured while processing the sample. Skipping')
 #        print(sample[0][0].shape,sample[1][0])#DEBUG
         training_lock and training_lock.release()
@@ -242,7 +242,7 @@ def thread_sample_aquisition(filename,params):
     
     offset = 0
     
-    total_note_estimation = len(mid.sequence.notes) #TODO improve by accounting for filters
+    total_note_estimation = len(mid.sequence.notes)
     if params.use_precise_note_count:
         s=0
         for note in mid.sequence.notes:
@@ -257,6 +257,18 @@ def thread_sample_aquisition(filename,params):
         mid_wf = audio_complete(mid.render(), params.N)
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
         #Also prevents problems if the first section is complete silence
+        ref_C_1 = np.max(mid_wf.slice_C(0, mid_wf._frames_to_seconds(mid_wf.shape[1]),
+                                        mid_wf.shape[1],
+                                        params.pitch_frames,
+                                        bins_per_tone=1))
+        ref_C_inst = np.max(mid_wf.slice_C(0, mid_wf._frames_to_seconds(mid_wf.shape[1]),
+                                           mid_wf.shape[1],
+                                           params.pitch_frames,
+                                           bins_per_tone=params.instrument_bins_per_tone))
+        ref_C_foc = np.max(mid_wf.slice_C(0, mid_wf._frames_to_seconds(mid_wf.shape[1]),
+                                          mid_wf.shape[1],
+                                          params.pitch_frames,
+                                          bins_per_tone=params.instrument_bins_per_tone*4))
         
         audio_w = mid_wf.section(offset, None, params.timing_frames)
         notes_target, _ = relevant_notes(mid, offset, 
@@ -269,7 +281,7 @@ def thread_sample_aquisition(filename,params):
         logger.detailed('Could not process file {} with error {}. Skipping...'.
               format(fn,ex))
         return
-    #TODO only process an n notes long sectionf rom the song
+    
     while offset < mid.duration and training_state_g.value>0:
         note_gold = notes_target.pop(lowest=True, threshold=frametime)
         
@@ -301,36 +313,42 @@ def thread_sample_aquisition(filename,params):
                 
                 notes_target, _ = relevant_notes(mid, offset, 
                                                        params.window_size_note_time)
-                #TODO:check if this should be halfwindow to make the window not include the first note after the offset
+                
                 continue
 #            C_timing = audio_w.slice_C(0,params.window_size_note_time,
 #                                       params.timing_frames,
 #                                       bins_per_note=1)
                 
             C_timing = audio_complete.compress_bands(audio_w.mag,
-                                        bands = params.timing_bands)#TODO temp
-            C_timing = audio_complete._resize(C_timing,params.timing_frames)
+                                        bands = params.timing_bands)
+            C_timing = audio_complete._resize(C_timing,params.timing_frames)\
+                                                /mid_wf.ref_mag
             audio_sw = audio_w.resize(onset_gold, duration_gold, 
                                       params.pitch_frames,
-                                      attribs=['mag'])
+                                      attribs=['mag','ph'])
             C_sw_pitch = audio_w.slice_C(onset_gold, duration_gold, 
                                       params.pitch_frames,
-                                      bins_per_tone=1)
+                                      bins_per_tone=1)/ref_C_1
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
-                                        bins_per_tone=params.instrument_bins_per_tone)
+                                        bins_per_tone=params.instrument_bins_per_tone)\
+                                        /ref_C_inst
             F_sw_inst_foc_const = audio_sw.section_power('mag',
-                                                  fft_bin_min_const,fft_bin_max_const)
+                                                  fft_bin_min_const,fft_bin_max_const)\
+                                                         /mid_wf.ref_mag
             fft_bin_min = audio_w.midi_tone_to_FFT(pitch_gold)
             fft_bin_max = fft_bin_min + params.instrument_bands
             F_sw_inst_foc = audio_sw.section_power('mag',
-                                                  fft_bin_min,fft_bin_max)#TODO this only works for train and test
+                                                  fft_bin_min,fft_bin_max)\
+                                                         /mid_wf.ref_mag
+            
             C_sw_inst_foc = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
                                         bins_per_tone=params.instrument_bins_per_tone*4,
                                         highest_note = None,
                                         nbins = params.instrument_bands,
-                                        lowest_note= midi_to_note(pitch_gold))
+                                        lowest_note= midi_to_note(pitch_gold))\
+                                        /ref_C_foc
             
             C_sw_inst_foc_const = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
@@ -338,7 +356,8 @@ def thread_sample_aquisition(filename,params):
                                         highest_note = None, 
                                         nbins = params.instrument_bands,
                                         lowest_note= midi_to_note(60)
-                                        )
+                                        )\
+                                        /ref_C_foc
         except:
             logger.exception('Faulty note in midi {}. Skipping file'.format(fn))
             return
@@ -386,7 +405,7 @@ def thread_sample_aquisition(filename,params):
                                     format(note_i_g.value,fn_base))
                     
                     audio_w.save(fn_base+'_full_window.flac')
-    #                audio_sw.save(fn_base+'_short_window.flac')
+                    audio_sw.save(fn_base+'_short_window.flac')
                     note_guessed.save(fn_base + '_guessed.mid')
                     ac_note_guessed.save(fn_base+'_guessed.flac')
                     #This way the subtractoin is done twice, however the 
@@ -397,7 +416,8 @@ def thread_sample_aquisition(filename,params):
                     audio_subd.save(fn_base + '_after_subtr.flac')
                     
         audio_w.subtract(ac_note_guessed, offset=onset_gold)
-            
+    logger.info('Finished processing: {}'.format(fn))
+    
 @logged_thread
 def thread_training(samples_q, params,training_state, 
                     allow_parallel_training=False):
@@ -474,7 +494,6 @@ def thread_training(samples_q, params,training_state,
                          sample.instrument,
                          sample.instrument,
                          sample.velocity)
-                
                 current_x = [all_x[mi] for mi in params.models_to_train]
                 current_y = [all_y[mi] for mi in params.models_to_train]
                 
