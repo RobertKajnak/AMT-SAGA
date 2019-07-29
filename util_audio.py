@@ -760,9 +760,9 @@ class note_sequence:
                 raise ValueError("sf2_path needs to specified on first \
                                  instance creation or class method \
                                  _init_fluidsynth should be called first.")
-            elif note_sequence.sf_path != sf2_path:
-                note_sequence._init_fluidsynth(sf2_path,fs=44100)
-                note_sequence.sf_path = sf2_path
+        if sf2_path is not None and note_sequence.sf_path != sf2_path:
+            note_sequence._init_fluidsynth(sf2_path,fs=44100)
+            note_sequence.sf_path = sf2_path
                 
         mid = midi_io.note_sequence_to_pretty_midi(self.sequence)
         wf = self._fluidsynth_midi_stateful(mid, fs=sample_rate)
