@@ -699,7 +699,7 @@ batch_size = 16
 
 suffix =  '_' + str(convolutional_layer_count) + '_' + str(pool_layer_frequency) + \
          '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
-         '_bs' + str(batch_size)
+         '_bs' + str(batch_size) +'_sanity_check'
          
 rn = res_net(input_shapes=[(28,28,1)],kernel_sizes=[(3,3)],pool_sizes=[(2,2)],
              output_classes=10,
@@ -717,7 +717,7 @@ suffix += '_' + oname
 
 rn.plot_model(os.path.join(res_dir,'model_' + suffix + '.png'))
 
-test_set_size = 10000
+test_set_size = 60000
 pb = PB.ProgressBar(test_set_size//batch_size,sound='beep')#(train_images.shape[0])
 
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
@@ -734,7 +734,7 @@ for image,label in zip(train_images[:test_set_size,:],train_labels[:test_set_siz
         cb_x=expanded_image
         cb_y=expanded_label
     
-test_set_size = 5000
+test_set_size = 10000
 pb = PB.ProgressBar(test_set_size//batch_size)
 cb_x=np.zeros([0]+list(train_images.shape[1:]))
 cb_y=np.zeros([0]+list(train_labels.shape[1:]))
@@ -830,7 +830,7 @@ residual_layer_frequencies = 0
 
 suffix = 'housing_' + str(convolutional_layer_count) + \
          '_' + str(feature_expand_frequency) + '_' + str(residual_layer_frequencies) + \
-                '_mutiple_residuals'
+                '_mutiple_residuals_sanity_check'
 
 
 dataframe = pandas.read_csv(os.path.join(path_cont,fn_cont), delim_whitespace=True, header=None)
@@ -854,7 +854,7 @@ rn = res_net(input_shapes=[(13,1,1)],kernel_sizes=[(1,1)],pool_sizes=[(0,0)],
 
 rn.plot_model(os.path.join(path_cont,'model_' + suffix + '.png'))
 
-epochs = 1
+epochs = 100
 pb = PB.ProgressBar(training_length*epochs)
 for i in range(epochs):
     np.random.shuffle(training_dataset)
@@ -1338,5 +1338,23 @@ with open('output/statistics/valid_files_from_f1.txt', 'r') as f:
 from shutil import copy2
 for fn in valid_filenames_to_move:
     copy2(fn,'data/lakh_filtered/test/midi/')
+
+
+#%%
+N=4096
+data_path = '/home/hesiris/Documents/Thesis/AMT-SAGA/data/training/'
+midi_filename = 'Listen!!.mid'
+
+sf_type = 'GM_soundfonts'
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/'
+
+mid = nsequence(os.path.join(data_path,midi_filename))
+ac = audio_complete(mid.render(sf2_path = os.path.join(sf_path,sf_type+'.sf2')), N)
+
+
+ac.save(os.path.join('/home/hesiris/Documents/Thesis/AMT-SAGA/output/soundfont_comparison',sf_type + '.flac'))
+
+
+
 
 
