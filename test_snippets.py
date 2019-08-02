@@ -477,11 +477,13 @@ buckets = 4096
 #Generate notes
 ns = nsequence(sf2_path = sf_path)
 inst = 0
-ns.add_note(0,inst,'G3',start=0,end=2,velocity=60)
-ns.add_note(0,inst,'b',start=0,end=2,velocity=60)
-ns.add_note(0,inst,'D4',start=0,end=2,velocity=60)
+velocity_main = 120
+velocity_2 = 120
+ns.add_note(0,inst,'G3',start=0,end=2,velocity=velocity_main)
+ns.add_note(0,inst,'b',start=0,end=2,velocity=velocity_main)
+ns.add_note(0,inst,'D4',start=0,end=2,velocity=velocity_main)
 
-ns.add_note(0,inst,'C2',start=0.5,end=1.5,velocity=60)
+ns.add_note(0,inst,'C2',start=0.5,end=1.5,velocity=velocity_2)
 
 #Generate wave and spectral representations
 wf = ns.render()
@@ -489,21 +491,25 @@ ac = util_audio.audio_complete(wf,buckets)
 
 #same for the C only
 guess = nsequence()
-guess.add_note(0,inst,'C2',0,1,velocity=105)
+guess.add_note(0,inst,'C2',0,1,velocity=velocity_2)
 wf_guess = guess.render()
 ac_guess = util_audio.audio_complete(wf_guess,buckets)
+#ac_guess._ref_mag = ac.ref_mag
+print(ac_guess.ref_mag)
+print(ac.ref_mag)
+#ac_guess.mag /= 1
 
 #Subtract. Create a copy to plot later
 ac_sub = ac.clone()
-ac_sub.subtract(ac_guess,offset=0.5,attack_compensation = 0)
+ac_sub.subtract(ac_guess,offset=0.5,attack_compensation = 0, normalize = False)
 
 #plot
 util_audio.plot_specs([ac_guess,ac,ac_sub])
 
 #Save both midi and wav
 path = './output/subtraction_demo/'
-filename = 'piano_velocity_double'
-ac_guess.save(os.path.join(path, filename + '_test_guess.flac'))
+filename = 'low_velocity'
+ac_guess.save(os.path.join(path, filename + '_test_guess.flac'),flac=True)
 ac.save(os.path.join(path,filename + '_test.flac'))
 ac_sub.save(os.path.join(path,filename + '_test_sub.flac'))
 
@@ -872,8 +878,8 @@ for x in test_dataset:
     pb.check_progress()
   
     
-#rn.plot(metrics_to_plot=[0,1,2,3,4,5],moving_average_window=0,
-#             #filename_training = os.path.join(path_cont,'training' + suffix + '.png'),
+rn.plot(metrics_to_plot=[0,1,2,3,4,5],moving_average_window=100,
+             filename_training = os.path.join(path_cont,'training' + suffix + '.png'))
 #             filename_test = os.path.join(path_cont,'test' + suffix + '.png'))
 
 

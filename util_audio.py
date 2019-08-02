@@ -508,14 +508,19 @@ class audio_complete:
         plt.figure(figsize=(width, height))
 
         plt.subplot(1,1,1)
-        librosa.display.specshow(self.D, y_axis='log',x_axis='time',sr=self.sr,hop_length = self.hl)
+        librosa.display.specshow(self.D, y_axis='log',x_axis='time',
+                                 sr=self.sr,hop_length = self.hl)
         plt.ylabel('Log DB')
         plt.colorbar(format='%+2.0f dB')
 
-    def save(self,filename):
+    def save(self,filename,flac=True):
         """Saves the waveform to the specified flac filename with FLAC codec"""
-        audio_to_flac(waveform = self.wf,
-                      filename=filename,sr=self.sr)
+#        print(np.max(self.wf))
+        if flac:
+            audio_to_flac(waveform = self.wf,
+                          filename=filename,sr=self.sr)
+        else:    
+            librosa.output.write_wav(filename, self.wf, self.sr, norm=True)
         
 
 class note_sequence:
@@ -765,7 +770,11 @@ class note_sequence:
             note_sequence.sf_path = sf2_path
                 
         mid = midi_io.note_sequence_to_pretty_midi(self.sequence)
-        wf = self._fluidsynth_midi_stateful(mid, fs=sample_rate)
+        wf = self._fluidsynth_midi_stateful(mid, fs=sample_rate,normalize=False)
+        vel_max = max(note.velocity for note in self.sequence.notes)
+        if len(self.sequence.notes) == 1:
+            vel_max = max(1,vel_max-12)
+        wf = wf*(vel_max/128.0)**4/np.abs(wf).max()
         
         if max_duration is None:
             return wf

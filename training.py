@@ -389,10 +389,10 @@ def thread_sample_aquisition(filename,params):
         # subtract correct note for training:
         note_guessed = note_sequence()
         note_guessed.add_note(instrument_gold, instrument_gold, pitch_gold,
-                              0, duration_gold, velocity=100,
+                              0, duration_gold, velocity=velocity_gold,
                               is_drum=False)
         
-        ac_note_guessed = audio_complete(note_guessed.render(), params.N)
+        ac_note_guessed = audio_complete(note_guessed.render(),params.N)
         
         if params.note_save_freq:
             with note_i_g.get_lock():
