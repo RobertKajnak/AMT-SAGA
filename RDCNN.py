@@ -38,7 +38,6 @@ from tensorflow.keras.layers import Add
 from tensorflow.keras.layers import AveragePooling2D
 
 
-
 class res_net:
     def __init__(self,
                  input_shapes = [(20,2049,1,),(20,256,1,)],

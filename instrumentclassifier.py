@@ -14,7 +14,7 @@ class InstrumentClassifier(res_net):
     INSTRUMENT_FOCUSED = 'instrument_focused'
     INSTRUMENT_FOCUSED_CONST = 'instrument_focused_const'
     INSTRUMENT_DUAL = 'instrument_dual'
-    def __init__(self, params, variant):
+    def __init__(self, params, variant, prefix = None):
         if variant == InstrumentClassifier.INSTRUMENT:
             input_shape = [(params.instrument_bands, params.instrument_frames, 1)]
             kernel_size = params.kernel_size_instrument
@@ -33,8 +33,13 @@ class InstrumentClassifier(res_net):
         else:
             raise ValueError('Invalid Variant Selected')
         
-        checkpoint_prefix = 'checkpoint_' + variant
-        metrics_prefix = 'metrics_' + variant
+        if prefix is None:
+            checkpoint_prefix = 'checkpoint_' + variant
+            metrics_prefix = 'metrics_' + variant
+        else:
+            checkpoint_prefix = 'checkpoint_' + prefix
+            metrics_prefix = 'metrics_' + prefix
+            
         super().__init__(input_shapes=input_shape,
                          kernel_sizes=kernel_size, pool_sizes=pool_size,
                          output_classes=params.instrument_classes,

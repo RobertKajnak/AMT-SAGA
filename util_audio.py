@@ -327,6 +327,10 @@ class audio_complete:
         
         return nac
     
+    def spectral_flatness(self):
+        return np.mean(librosa.feature.spectral_flatness(y=self.wf, 
+                        n_fft=self.N, hop_length=self.hl))
+    
     def section_power(self,name,band_min,band_max):
         """Returns a an array containing a copy of the part of the spectra. 
         if the maximmum band is outside the psecified range, the result will

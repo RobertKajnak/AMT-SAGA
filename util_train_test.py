@@ -55,8 +55,11 @@ class Hyperparams:
         self.kernel_size_instrument = [(4,2)]
         self.pool_size_instrument = [(int(4*max(1,np.log2(bins_per_tone))), 2)]
         
+        self.bins_velocity = 36
         self.velocity_min = 5
         self.velocity_max = 125
+        self.kernel_size_velocity = [(2, 2)]
+        self.pool_size_velocity = [(2, 2)]
         
         self.batch_size = batch_size = batch_size
 
@@ -174,8 +177,13 @@ class note_sample:
     def __init__(self,filename, 
                  C_timing, 
                  C_sw_pitch, C_sw_inst, 
-                 F_sw_inst_foc,F_sw_inst_foc_const,
+                 F_sw_inst_foc, 
+                 F_sw_inst_foc_log10, 
+                 F_sw_inst_foc_const,
+                 F_sw_inst_foc_const_log10,
                  C_sw_inst_foc, C_sw_inst_foc_const,
+                 C_velocity,
+                 ph,
                  pitch, instrument,
                  time_start, time_end,
                  velocity):
@@ -184,9 +192,13 @@ class note_sample:
         self.C_sw_pitch = C_sw_pitch
         self.C_sw_inst = C_sw_inst
         self.F_sw_inst_foc = F_sw_inst_foc
+        self.F_sw_inst_foc_log10 = F_sw_inst_foc_log10
         self.F_sw_inst_foc_const = F_sw_inst_foc_const
+        self.F_sw_inst_foc_const_log10 = F_sw_inst_foc_const_log10
         self.C_sw_inst_foc = C_sw_inst_foc
         self.C_sw_inst_foc_const = C_sw_inst_foc_const
+        self.C_velocity = C_velocity
+        self.ph = ph
         self.pitch = pitch
         self.instrument = instrument
         self.time_start = time_start

@@ -30,7 +30,7 @@ from util_dataset import DataManager, get_latest_file
 from util_audio import note_sequence
 from util_audio import audio_complete
 from util_train_test import relevant_notes, note_sample, validate_note, \
-    PATH_MODEL_META,PATH_NOTES
+    PATH_MODEL_META,PATH_NOTES,sumrize
 
 try:
     logging.DETAILED
@@ -61,33 +61,41 @@ def gen_model(model_name,params):
     checkpoint_prefix = 'checkpoint_' + model_name
     
     if model_name == 'timing_start':
-        logger.info('Loading Timing Start Detector')
-        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix)
+        logger.info('Loading Timing Start Detector ({})'.format(model_name))
+        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix,
+                                 metrics_prefix = 'metrics_timing_start')
     if model_name == 'timing_end':
-        logger.info('Loading Timing End Detector')
-        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix)
+        logger.info('Loading Timing End Detector ({})'.format(model_name))
+        model = TimingClassifier(params, checkpoint_prefix= checkpoint_prefix,
+                                 metrics_prefix = 'metrics_timing_end')
         
     if model_name == 'pitch':
-        logger.info('Loading Pitch Classifier')
+        logger.info('Loading Pitch Classifier ({})'.format(model_name))
         model = PitchClassifier(params, checkpoint_prefix= checkpoint_prefix)
         
     if model_name == 'instrument':
-        logger.info('Loading Instrument Classifier')
+        logger.info('Loading Instrument Classifier ({})'.format(model_name))
         model = InstrumentClassifier(params, 
                                      variant=InstrumentClassifier.INSTRUMENT)
-    if model_name == 'instrument_focused' or model_name == 'instrument_focused_lin':
-        logger.info('Loading Focused Instrument Classifier')
+    if model_name == 'instrument_focused' or model_name == 'instrument_focused_lin' \
+        or model_name == 'instrument_focused_lin_log10':
+        logger.info('Loading Focused Instrument Classifier ({})'.format(model_name))
         model = InstrumentClassifier(
-                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED)
-    if model_name == 'instrument_focused_const' or model_name == 'instrument_focused_const_lin':
+                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED, 
+                prefix = model_name)
+    if model_name == 'instrument_focused_const' or model_name == 'instrument_focused_const_lin' \
+        or model_name == 'instrument_focused_const_lin_log10':
         logger.info('Loading Focused Instrument Classifier with fixed window '
-                    'position')
+                    'position  ({})'.format(model_name))
         model = InstrumentClassifier(
-                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED_CONST)
-    if model_name == 'instrument_dual' or model_name == 'instrument_dual_lin':
-        logger.info('Loading Focused Instrument Classifier')
+                params, variant= InstrumentClassifier.INSTRUMENT_FOCUSED_CONST, 
+                prefix = model_name)
+    if model_name == 'instrument_dual' or model_name == 'instrument_dual_lin' \
+        or model_name == 'instrument_dual_lin_phase':
+        logger.info('Loading Focused Instrument Classifier  ({})'.format(model_name))
         model = InstrumentClassifier(
-                params, variant= InstrumentClassifier.INSTRUMENT_DUAL)
+                params, variant= InstrumentClassifier.INSTRUMENT_DUAL, 
+                prefix = model_name)
         
     if model_name == 'velocity':
         logger.info('Loading Veloicty Classifier')
@@ -255,6 +263,9 @@ def thread_sample_aquisition(filename,params):
                 .format(fn,total_note_estimation))
     try:
         mid_wf = audio_complete(mid.render(), params.N)
+        if mid_wf.spectral_flatness()>0.3:
+            logger.info('Could not generate sound for {}. Skipping'.format(fn))
+            return
         mid_wf.mag # Evaluate mag to prime it for the NN. Efficiency trick.
         #Also prevents problems if the first section is complete silence
         ref_C_1 = np.max(mid_wf.slice_C(0, mid_wf._frames_to_seconds(mid_wf.shape[1]),
@@ -334,13 +345,22 @@ def thread_sample_aquisition(filename,params):
                                         bins_per_tone=params.instrument_bins_per_tone)\
                                         /ref_C_inst
             F_sw_inst_foc_const = audio_sw.section_power('mag',
-                                                  fft_bin_min_const,fft_bin_max_const)\
-                                                         /mid_wf.ref_mag
+                                                  fft_bin_min_const,fft_bin_max_const)
+            
+            F_sw_inst_foc_const_log10 = np.log10(F_sw_inst_foc_const*1000 + 1)
+            F_sw_inst_foc_const_log10 /= np.max(F_sw_inst_foc_const_log10)
+            F_sw_inst_foc_const/=mid_wf.ref_mag
+                                                         
             fft_bin_min = audio_w.midi_tone_to_FFT(pitch_gold)
             fft_bin_max = fft_bin_min + params.instrument_bands
             F_sw_inst_foc = audio_sw.section_power('mag',
-                                                  fft_bin_min,fft_bin_max)\
-                                                         /mid_wf.ref_mag
+                                                  fft_bin_min,fft_bin_max)
+                                                  
+            F_sw_inst_foc_log10 = np.log10(F_sw_inst_foc*1000+1)
+            F_sw_inst_foc_log10 /= np.max(F_sw_inst_foc_log10)
+            F_sw_inst_foc/=mid_wf.ref_mag
+            ph = audio_sw.section_power('ph', fft_bin_min,fft_bin_max)
+            ph = (np.angle(ph)+3.15)/6.3
             
             C_sw_inst_foc = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
@@ -358,6 +378,14 @@ def thread_sample_aquisition(filename,params):
                                         lowest_note= midi_to_note(60)
                                         )\
                                         /ref_C_foc
+                                        
+            C_velocity = audio_w.slice_C(onset_gold, duration_gold,
+                                        params.instrument_frames,
+                                        bins_per_tone=2,
+                                        highest_note = None,
+                                        nbins = params.bins_velocity,
+                                        lowest_note= midi_to_note(pitch_gold-10))\
+                                        /ref_C_foc
         except:
             logger.exception('Faulty note in midi {}. Skipping file'.format(fn))
             return
@@ -365,12 +393,15 @@ def thread_sample_aquisition(filename,params):
         sample = note_sample(fn,
                              C_timing,
                              C_sw_pitch, C_sw_inst, 
-                             F_sw_inst_foc, F_sw_inst_foc_const, 
+                             F_sw_inst_foc,F_sw_inst_foc_log10,
+                             F_sw_inst_foc_const, F_sw_inst_foc_const_log10, 
                              C_sw_inst_foc, C_sw_inst_foc_const,
+                             C_velocity,
+                             ph,
                              pitch_gold, instrument_gold,
                              onset_gold, onset_gold + duration_gold,
                              velocity_gold)
-                
+
         while training_state_g.value>0:
             try:
                 samples_q_g.put(sample,timeout=1)
@@ -436,8 +467,11 @@ def thread_training(samples_q, params,training_state,
                     'pitch',
                     'instrument',
                     'instrument_focused_lin', 
-                    'instrument_focused_const_lin',
+                    'instrument_focused_lin_log10', 
+                    'instrument_focused_const_lin', 
+                    'instrument_focused_const_lin_log10',
                     'instrument_dual_lin',
+                    'instrument_dual_lin_phase',
                     'instrument_focused', 'instrument_focused_const',
                     'instrument_dual',
                     'velocity']
@@ -477,15 +511,21 @@ def thread_training(samples_q, params,training_state,
                          sample.C_sw_pitch,
                          sample.C_sw_inst,
                          sample.F_sw_inst_foc,
+                         sample.F_sw_inst_foc_log10,
                          sample.F_sw_inst_foc_const,
+                         sample.F_sw_inst_foc_const_log10,
                          [sample.C_sw_inst,sample.F_sw_inst_foc],
+                         [sample.F_sw_inst_foc,sample.ph],
                          sample.C_sw_inst_foc,
                          sample.C_sw_inst_foc_const,
                          [sample.C_sw_inst,sample.C_sw_inst_foc],
-                         sample.C_sw_pitch)
+                         sample.C_velocity)
                 all_y = (sample.time_start,
                          sample.time_end,
                          sample.pitch,
+                         sample.instrument,
+                         sample.instrument,
+                         sample.instrument,
                          sample.instrument,
                          sample.instrument,
                          sample.instrument,

@@ -1245,16 +1245,21 @@ ac.save(os.path.join(output_path,'shifted.flac'))
 params = util_train_test.Hyperparams('','')
 path_data = os.path.join('data','lakh_midi')
 
-dm = DataManager(path_data, sets=['test'], types=['midi'])
-dm.set_set('test') 
+dm = DataManager(path_data, sets=['training'], types=['midi'])
+dm.set_set('training') 
+
+all_filenames = []
+for fn in dm:
+    all_filenames.append(fn[0])
 
 data_dist = np.zeros(112)
 valid_filenames=[]
-train_size = len(dm.data['test']['midi'])
+train_size = len(all_filenames)
 pb = PB.ProgressBar(train_size)
 
 i=0
-for fn in dm:
+must_include = train_size//200
+for fn in all_filenames:
     pb.check_progress()
     if i>train_size:
         break
@@ -1262,25 +1267,19 @@ for fn in dm:
         i+=1
         
     try:
-        mid = nsequence(fn[0])
+        mid = nsequence(fn)
     except:
         continue
-#    j=0
+    
     dist_song = np.zeros(112)
     for note in mid.sequence.notes:
-#    note = mid.pop()
-#    while note is not None:
         if not util_train_test.validate_note(note,params):
             dist_song[note.program] += 1
-#            j+=1
-#            if j>500:
-#                break;
-#        note = mid.pop()
         
-    if i<train_size/500 or \
+    if i< must_include or \
             np.var(data_dist)>=np.var(data_dist+dist_song):
         data_dist+=dist_song
-        valid_filenames.append(fn[0])
+        valid_filenames.append(fn)
         
 dist_total =np.zeros(112)
 for fn in valid_filenames:
@@ -1332,7 +1331,7 @@ plt.xlabel('Program')
 plt.tight_layout()
 #plt.show()
 fig.savefig('output/statistics/data_dristribution_placeholder.png')
-with open('output/statistics/valid_files_from_0_paceholder.txt', 'w') as f:
+with open('output/statistics/valid_files_from_01_paceholder.txt', 'w') as f:
     for fn in even_more_valid_fn:
         f.write("%s\n" % fn)
 #%% Actually move the files
@@ -1360,6 +1359,36 @@ ac = audio_complete(mid.render(sf2_path = os.path.join(sf_path,sf_type+'.sf2')),
 
 ac.save(os.path.join('/home/hesiris/Documents/Thesis/AMT-SAGA/output/soundfont_comparison',sf_type + '.flac'))
 
+
+#%% White noise test
+
+sr = 44100
+N=4096
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
+
+#fns = []
+#for fn in dm:
+#    fns.append(fn[0])
+
+fidx = 0
+for fn in fns:
+    fidx +=1
+    if fidx<176:
+        continue
+    for i in range(0,3):
+        print(str(fidx) + 'Generating for ' + fn[73:-4])
+        mid = nsequence(fn)
+        ac = audio_complete(mid.render(sf2_path = sf_path),4096)
+        print(ac.spectral_flatness())
+        if ac.spectral_flatness()<0.2:
+            break
+        else:
+            print('Generation failed. Trying again')
+    else:
+        print('Generation completely failed. Skipping')
+        ac.save('/home/hesiris/Documents/Thesis/AMT-SAGA/data/lakh_filtered/training/audio/wn/'+fn[73:-4]+'.flac')
+        continue
+    ac.save('/home/hesiris/Documents/Thesis/AMT-SAGA/data/lakh_filtered/training/audio/'+fn[73:-4]+'.flac')
 
 
 
