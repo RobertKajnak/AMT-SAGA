@@ -339,7 +339,7 @@ def thread_sample_aquisition(filename,params):
                                       attribs=['mag','ph'])
             C_sw_pitch = audio_w.slice_C(onset_gold, duration_gold, 
                                       params.pitch_frames,
-                                      bins_per_tone=1)/ref_C_1
+                                      bins_per_tone=params.pitch_bins_per_tone)/ref_C_1
             C_sw_inst = audio_w.slice_C(onset_gold, duration_gold,
                                         params.instrument_frames,
                                         bins_per_tone=params.instrument_bins_per_tone)\

@@ -42,15 +42,16 @@ class Hyperparams:
         self.pool_size_timing = [(int(2*max(1,np.log2(bins_per_tone//2))), 8)]
         
         self.pitch_frames = 8
-        self.pitch_bands = 87
         self.pitch_low = 21
         self.pitch_high = 108
+        self.pitch_bins_per_tone = max(1,bins_per_tone//2)
+        self.pitch_bands = (self.pitch_high-self.pitch_low) * self.pitch_bins_per_tone
         self.kernel_size_pitch = [(4, 2)]
         self.pool_size_pitch = [(4, 2)]
         
         self.instrument_frames = self.pitch_frames
         self.instrument_bins_per_tone = bins_per_tone
-        self.instrument_bands = self.instrument_bins_per_tone*self.pitch_bands
+        self.instrument_bands = self.instrument_bins_per_tone*(self.pitch_high-self.pitch_low)
         self.instrument_classes = 112
         self.kernel_size_instrument = [(4,2)]
         self.pool_size_instrument = [(int(4*max(1,np.log2(bins_per_tone))), 2)]
