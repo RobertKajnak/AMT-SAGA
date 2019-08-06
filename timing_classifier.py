@@ -51,7 +51,7 @@ class timming_classifier(res_net):
             timing_pred = self.predict(expanded)
         else:
             if test_phase:
-                timing_pred = self.test(expanded, gold_expanded)
+                timing_pred = self.test(expanded, gold_expanded, use_predict=True)
             else:
                 timing_pred = self.train(expanded, gold_expanded)
 

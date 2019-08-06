@@ -1243,10 +1243,14 @@ ac.save(os.path.join(output_path,'shifted.flac'))
 
 #%% Test Instrument distribution over data set
 params = util_train_test.Hyperparams('','')
-path_data = os.path.join('data','lakh_midi')
+path_data = '/run/media/hesiris/SSD/'
+sr = 44100
+N=4096
+sf_path = '/home/hesiris/Documents/Thesis/soundfonts/GM_soundfonts.sf2'
+#os.path.join('data','lakh_midi')
 
-dm = DataManager(path_data, sets=['training'], types=['midi'])
-dm.set_set('training') 
+dm = DataManager(path_data, sets=['Temp'], types=['1'])
+dm.set_set('Temp') 
 
 all_filenames = []
 for fn in dm:
@@ -1276,8 +1280,10 @@ for fn in all_filenames:
         if not util_train_test.validate_note(note,params):
             dist_song[note.program] += 1
         
-    if i< must_include or \
-            np.var(data_dist)>=np.var(data_dist+dist_song):
+    if (i< must_include or \
+            np.var(data_dist)>=np.var(data_dist+dist_song)) \
+            and audio_complete(mid.render(sf2_path=sf_path),
+                               n_fft=4096,sample_rate=sr).spectral_flatness()<0.3:
         data_dist+=dist_song
         valid_filenames.append(fn)
         
@@ -1330,8 +1336,8 @@ plt.ylabel('Occurances')
 plt.xlabel('Program')
 plt.tight_layout()
 #plt.show()
-fig.savefig('output/statistics/data_dristribution_placeholder.png')
-with open('output/statistics/valid_files_from_01_paceholder.txt', 'w') as f:
+fig.savefig('output/statistics/data_dristribution_placeholder123.png')
+with open('output/statistics/valid_files_from_123_paceholder.txt', 'w') as f:
     for fn in even_more_valid_fn:
         f.write("%s\n" % fn)
 #%% Actually move the files
@@ -1391,5 +1397,72 @@ for fn in fns:
     ac.save('/home/hesiris/Documents/Thesis/AMT-SAGA/data/lakh_filtered/training/audio/'+fn[73:-4]+'.flac')
 
 
+#%% Plot confusion matrices
+    
+npz = np.load('/home/hesiris/Documents/Thesis/AMT-SAGA/output/bpn6_33/checkpoints/metrics_instrument_8116_training.npz')
+npzt = sample_y = list(map(list, zip(*npz['metrics'])))
+pred = npzt[1]
+true = npzt[2]
+for i in range(len(true)):
+    pred[i] = int(pred[i])
+    true[i] = int(true[i])
+#    true[i] = int(true[i][0])
+   
+from sklearn.metrics import confusion_matrix
+from sklearn.utils.multiclass import unique_labels
+def plot_confusion_matrix(y_true, y_pred, classes,
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues,fsize=(15,15),include_text=True):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if not title:
+        if normalize:
+            title = 'Normalized confusion matrix'
+        else:
+            title = 'Confusion matrix, without normalization'
+
+    # Compute confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    # Only use the labels that appear in the data
+    classes = classes[unique_labels(y_true, y_pred)]
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    fig, ax = plt.subplots(figsize=fsize)
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    if include_text:
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(j, i, format(cm[i, j], fmt),
+                        ha="center", va="center",
+                        color="white" if cm[i, j] > thresh else "black")
+    fig.tight_layout()
+    return ax
 
 
+plot_confusion_matrix(true,pred,np.arange(112),fsize=(20,20),include_text=False)

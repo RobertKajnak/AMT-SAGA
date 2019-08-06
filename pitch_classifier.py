@@ -50,7 +50,7 @@ class pitch_classifier(res_net):
             pitch_pred = self.predict(expanded)
         else:
             if test_phase:
-                pitch_pred = self.test(expanded, gold_expanded)
+                pitch_pred = self.test(expanded, gold_expanded, use_predict=True)
             else:
                 pitch_pred = self.train(expanded, gold_expanded)
 
