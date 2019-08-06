@@ -50,7 +50,7 @@ class VelocityClassifier(res_net):
             velocity_pred = self.predict(expanded)
         else:
             if test_phase:
-                velocity_pred = self.test(expanded, gold_expanded)
+                velocity_pred = self.test(expanded, gold_expanded, use_predict=True)
             else:
                 velocity_pred = self.train(expanded, gold_expanded)
 
